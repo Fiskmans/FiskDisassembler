@@ -301,7 +301,7 @@ JMPNear(
 	{
 		printf("-%04x ", -offset);
 	}
-	printf("(0x%08x)\n", aExecutionPointer + 5 + offset);
+	printf("(0x%08zx)\n", aExecutionPointer + 5 + offset);
 	return aExecutionPointer + 5 + offset;
 }
 
@@ -336,19 +336,6 @@ ADD_RM_IM8(
 }
 
 size_t
-MOV(
-	const std::vector<unsigned char>&			aImage,
-	size_t										aExecutionPointer,
-	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
-	REXState									aREX)
-{
-	printf("MOV \n");
-
-	PrintAround(aImage, aExecutionPointer + 1);
-	return -1;
-}
-
-size_t
 CALL_near_32_im(
 	const std::vector<unsigned char>&			aImage,
 	size_t										aExecutionPointer,
@@ -371,7 +358,7 @@ CALL_near_32_im(
 	{
 		printf("-%04x ", -offset);
 	}
-	printf("\t\t0x%08x  %s\n", target, name.c_str());
+	printf("\t\t0x%08zx  %s\n", target, name.c_str());
 
 	AddFunction(name, target);
 
@@ -395,6 +382,66 @@ RET(
 	printf("\n");
 	return -1;
 }
+
+size_t
+MOV(
+	const std::vector<unsigned char>&				aImage,
+	size_t											aExecutionPointer,
+	const std::vector<IMAGE_SECTION_HEADER>&		aSections,
+	REXState										aREX)
+{
+	printf("MOV \n");
+
+	switch (aImage[aExecutionPointer])
+	{
+	case 0xb0:
+		break;
+	case 0xb1:
+		break;
+	case 0xb2:
+		break;
+	case 0xb3:
+		break;
+	case 0xb4:
+		break;
+	case 0xb5:
+		break;
+	case 0xb6:
+		break;
+	case 0xb7:
+		break;
+	case 0xb8:
+	if (aREX.w)
+	{
+		uint32_t data;
+		memcpy(&data, aImage.data() + aExecutionPointer + 1, sizeof(data));
+		ModRMByte modRM = ParseModRM(aImage[aExecutionPointer + 1 + sizeof(data)], aREX);
+
+		printf("");
+	}
+		break;
+	case 0xb9:
+		break;
+	case 0xba:
+		break;
+	case 0xbb:
+		break;
+	case 0xbc:
+		break;
+	case 0xbd:
+		break;
+	case 0xbe:
+		break;
+	case 0xbf:
+		break;
+	default:
+		break;
+	}
+
+	PrintAround(aImage,aExecutionPointer + 1);
+	return -1;
+}
+
 
 size_t
 ModRMExtension(
@@ -479,19 +526,25 @@ ExploreCode(
 	std::map<unsigned char, Instruction> legacyOpCodeTable;
 
 	legacyOpCodeTable[0x40] = std::bind(REXPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::ref(legacyOpCodeTable));
-	for (size_t i	= 0x41; i <= 0x4F; i++)
-		legacyOpCodeTable[static_cast<unsigned char>(i)] = legacyOpCodeTable[0x40];
+	for (unsigned char i	= 0x41; i <= 0x4F; i++)
+		legacyOpCodeTable[i] = legacyOpCodeTable[0x40];
 
 	legacyOpCodeTable[0x80] = ModRMExtension;
 	legacyOpCodeTable[0x81] = ModRMExtension;
 	legacyOpCodeTable[0x82] = ModRMExtension;
 	legacyOpCodeTable[0x83] = ModRMExtension;
 
+	for (unsigned char i	= 0x88; i <= 0x8c; i++)
+		legacyOpCodeTable[i] = MOV;
+
 	legacyOpCodeTable[0xc2] = RET;
 	legacyOpCodeTable[0xc3] = RET;
 
 	legacyOpCodeTable[0xc6] = ModRMExtension;
 	legacyOpCodeTable[0xc7] = ModRMExtension;
+
+	for (unsigned char i = 0xb0; i <= 0xbF; i++)
+		legacyOpCodeTable[i] = MOV;
 
 	legacyOpCodeTable[0xE8] = CALL_near_32_im;
 	legacyOpCodeTable[0xE9] = JMPNear;
@@ -505,7 +558,7 @@ ExploreCode(
 	AddFunction("Main", aExecutionStart);
 	for (size_t i	= 0; i < globalFunctions.size(); i++)
 	{
-		printf("%08x [%s]\n", globalFunctions[i].myAddress, globalFunctions[i].myName.c_str());
+		printf("%08zx [%s]\n", globalFunctions[i].myAddress, globalFunctions[i].myName.c_str());
 		size_t executionPointer = globalFunctions[i].myAddress;
 
 		while (executionPointer != -1)
@@ -513,7 +566,7 @@ ExploreCode(
 			if (legacyOpCodeTable.count(aImage[executionPointer]))
 			{
 
-				printf("  0x%08x ", executionPointer);
+				printf("  0x%08zx ", executionPointer);
 				executionPointer = legacyOpCodeTable[aImage[executionPointer]](aImage, executionPointer, aSections, rex);
 			}
 			else
