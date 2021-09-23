@@ -301,7 +301,7 @@ JMPNear(
 	{
 		printf("-%04x ", -offset);
 	}
-	printf("(0x%08zx)\n", aExecutionPointer + 5 + offset);
+	printf("(0x%08zx)", aExecutionPointer + 5 + offset);
 	return aExecutionPointer + 5 + offset;
 }
 
@@ -316,7 +316,7 @@ SUB_RM_IM8(
 	bool		extra	 = false;
 	printf("SUB %s, ", RegMem64(byte, aREX, false, aImage, aExecutionPointer + 1, extra).c_str());
 
-	printf("0x%02x\n", aImage[aExecutionPointer + (extra ? 2 : 1)]);
+	printf("0x%02x", aImage[aExecutionPointer + (extra ? 2 : 1)]);
 	return aExecutionPointer + (extra ? 3 : 2);
 }
 
@@ -331,7 +331,7 @@ ADD_RM_IM8(
 	bool		extra	 = false;
 	printf("ADD %s, ", RegMem64(byte, aREX, false, aImage, aExecutionPointer + 1, extra).c_str());
 
-	printf("0x%02x\n", aImage[aExecutionPointer + (extra ? 2 : 1)]);
+	printf("0x%02x", aImage[aExecutionPointer + (extra ? 2 : 1)]);
 	return aExecutionPointer + (extra ? 3 : 2);
 }
 
@@ -358,7 +358,7 @@ CALL_near_32_im(
 	{
 		printf("-%04x ", -offset);
 	}
-	printf("\t\t0x%08zx  %s\n", target, name.c_str());
+	printf("\t\t0x%08zx  %s", target, name.c_str());
 
 	AddFunction(name, target);
 
@@ -379,7 +379,6 @@ RET(
 		memcpy(&toPop, aImage.data() + aExecutionPointer + 1, sizeof(toPop));
 		printf(" POP(%04x)", toPop);
 	}
-	printf("\n");
 	return -1;
 }
 
@@ -390,7 +389,7 @@ MOV(
 	const std::vector<IMAGE_SECTION_HEADER>&		aSections,
 	REXState										aREX)
 {
-	printf("MOV \n");
+	printf("MOV ");
 
 	switch (aImage[aExecutionPointer])
 	{
@@ -411,16 +410,40 @@ MOV(
 	case 0xb7:
 		break;
 	case 0xb8:
-	if (aREX.w)
 	{
-		uint32_t data;
-		memcpy(&data, aImage.data() + aExecutionPointer + 1, sizeof(data));
-		ModRMByte modRM = ParseModRM(aImage[aExecutionPointer + 1 + sizeof(data)], aREX);
-
-		printf("");
+		if (aREX.w)
+		{
+			uint64_t data;
+			memcpy(&data,aImage.data()+aExecutionPointer + 1,sizeof(data));
+			printf("[rAX], 0x%016I64x", data);
+			return aExecutionPointer + 1 + sizeof(data);
+		}
+		else
+		{
+			uint32_t data;
+			memcpy(&data, aImage.data() + aExecutionPointer + 1, sizeof(data));
+			printf("[rAX], 0x%08x", data);
+			return aExecutionPointer + 1 + sizeof(data);
+		}
 	}
 		break;
-	case 0xb9:
+	case 0xb9: 
+	{
+		if (aREX.w)
+		{
+			uint64_t data;
+			memcpy(&data, aImage.data() + aExecutionPointer + 1, sizeof(data));
+			printf("[rCX], 0x%016I64x", data);
+			return aExecutionPointer + 1 + sizeof(data);
+		}
+		else
+		{
+			uint32_t data;
+			memcpy(&data, aImage.data() + aExecutionPointer + 1, sizeof(data));
+			printf("[rCX], 0x%08x", data);
+			return aExecutionPointer + 1 + sizeof(data);
+		}
+	}
 		break;
 	case 0xba:
 		break;
@@ -558,15 +581,14 @@ ExploreCode(
 	AddFunction("Main", aExecutionStart);
 	for (size_t i	= 0; i < globalFunctions.size(); i++)
 	{
-		printf("%08zx [%s]\n", globalFunctions[i].myAddress, globalFunctions[i].myName.c_str());
+		printf("%08zx [%s]", globalFunctions[i].myAddress, globalFunctions[i].myName.c_str());
 		size_t executionPointer = globalFunctions[i].myAddress;
 
 		while (executionPointer != -1)
 		{
+			printf("\n  0x%08zx ", executionPointer);
 			if (legacyOpCodeTable.count(aImage[executionPointer]))
 			{
-
-				printf("  0x%08zx ", executionPointer);
 				executionPointer = legacyOpCodeTable[aImage[executionPointer]](aImage, executionPointer, aSections, rex);
 			}
 			else
@@ -576,6 +598,6 @@ ExploreCode(
 				break;
 			}
 		}
-		printf("\n");
+		printf("\n\n");
 	}
 }
