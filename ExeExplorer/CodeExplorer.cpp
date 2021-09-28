@@ -2,7 +2,9 @@
 #include "Printers.h"
 
 #include <functional>
+#include <iomanip>
 #include <map>
+#include <sstream>
 #include <string>
 
 struct BranchType
@@ -23,7 +25,7 @@ GetOrGenerateFunctionName(size_t				aAddress)
 	return names[aAddress];
 }
 
-std::vector<BranchType>																											globalFunctions;
+std::vector<BranchType>																													globalFunctions;
 
 void
 AddFunction(
@@ -55,7 +57,7 @@ struct REXState
 	bool	b : 1;
 };
 
-typedef std::function<size_t(const std::vector<unsigned char>&, size_t, const std::vector<IMAGE_SECTION_HEADER>&, REXState)>	Instruction;
+typedef std::function<size_t(const std::vector<unsigned char>&, size_t, const std::vector<IMAGE_SECTION_HEADER>&, REXState, size_t)>	Instruction;
 
 ModRMByte
 ParseModRM(
@@ -169,12 +171,14 @@ RegMem64(
 	bool										aSelector,
 	const std::vector<unsigned char>&			aImage,
 	size_t										aNextByte,
-	bool&										aConsumedExtraByte)
+	uint32_t&									aOutExtraConsumed,
+	int32_t*									aOutMarkerAt = nullptr)
 {
-	aConsumedExtraByte = false;
+	aOutExtraConsumed = 0;
 
-	if (aModRM.mod == 0b11)
+	switch (aModRM.mod)
 	{
+	case 0b11:
 		switch (aSelector ? aModRM.reg : aModRM.rm)
 		{
 		case 0b000:
@@ -196,86 +200,105 @@ RegMem64(
 		default:
 			break;
 		}
-	}
-	else
-	{
-		switch (aModRM.mod)
+		break;
+	case 0b01:
+		switch (aSelector ? aModRM.reg : aModRM.rm)
 		{
-		case 0b01:
-			switch (aModRM.rm)
-			{
-			case 0b000:
-				return "[rAX] + disp8";
-			case 0b001:
-				return "[rCX] + disp8";
-			case 0b010:
-				return "[rDX] + disp8";
-			case 0b011:
-				return "[rBX] + disp8";
-			case 0b100:
-				return "[SIB] + disp8";
-			case 0b101:
-				return "[how ??] + disp8";
-			case 0b110:
-				return "[rSI] + disp8";
-			case 0b111:
-				return "[rDI] + disp8";
-			default:
-				break;
-			}
-			break;
-		case 0b10:
-			switch (aModRM.rm)
-			{
-			case 0b000:
-				return "[rAX] + disp32";
-			case 0b001:
-				return "[rCX] + disp32";
-			case 0b010:
-				return "[rDX] + disp32";
-			case 0b011:
-				return "[rBX] + disp32";
-			case 0b100:
-				return "[SIB] + disp32";
-			case 0b101:
-				return "[how ??] + disp32";
-			case 0b110:
-				return "[rSI] + disp32";
-			case 0b111:
-				return "[rDI] + disp32";
-			default:
-				break;
-			}
-			break;
-		case 0b00:
-			switch (aModRM.rm)
-			{
-			case 0b000:
-				return "[rAX]";
-			case 0b001:
-				return "[rCX]";
-			case 0b010:
-				return "[rDX]";
-			case 0b011:
-				return "[rBX]";
-			case 0b100: {
-				aConsumedExtraByte	= true;
-
-				SIBByte sib			= ParseSIB(aImage[aNextByte], aREX);
-
-				return RegMemSIB(aModRM, sib);
-			}
-			case 0b101:
-				return "[how ??]";
-			case 0b110:
-				return "[rSI]";
-			case 0b111:
-				return "[rDI]";
-			default:
-				break;
-			}
+		case 0b000:
+			return "[rAX] + disp8";
+		case 0b001:
+			return "[rCX] + disp8";
+		case 0b010:
+			return "[rDX] + disp8";
+		case 0b011:
+			return "[rBX] + disp8";
+		case 0b100:
+			return "[SIB] + disp8";
+		case 0b101:
+			return "[how ??] + disp8";
+		case 0b110:
+			return "[rSI] + disp8";
+		case 0b111:
+			return "[rDI] + disp8";
+		default:
 			break;
 		}
+		break;
+	case 0b10:
+		switch (aSelector ? aModRM.reg : aModRM.rm)
+		{
+		case 0b000:
+			return "[rAX] + disp32";
+		case 0b001:
+			return "[rCX] + disp32";
+		case 0b010:
+			return "[rDX] + disp32";
+		case 0b011:
+			return "[rBX] + disp32";
+		case 0b100:
+			return "[SIB] + disp32";
+		case 0b101:
+			return "[how ??] + disp32";
+		case 0b110:
+			return "[rSI] + disp32";
+		case 0b111:
+			return "[rDI] + disp32";
+		default:
+			break;
+		}
+		break;
+	case 0b00:
+		switch (aSelector ? aModRM.reg : aModRM.rm)
+		{
+		case 0b000:
+			return "[rAX]";
+		case 0b001:
+			return "[rCX]";
+		case 0b010:
+			return "[rDX]";
+		case 0b011:
+			return "[rBX]";
+		case 0b100: {
+			aOutExtraConsumed	= 1;
+
+			SIBByte sib			= ParseSIB(aImage[aNextByte], aREX);
+
+			return RegMemSIB(aModRM, sib);
+		}
+		case 0b101: {
+			std::string out = "[rIP ";
+			int32_t		offset;
+			memcpy(&offset, aImage.data() + aNextByte, sizeof(offset));
+			aOutExtraConsumed = sizeof(offset);
+			if (offset < 0)
+			{
+				std::stringstream stream;
+				stream << std::setfill('0') << std::setw(sizeof(uint32_t) * 2)
+					   << std::hex << -offset;
+				out += "- " + stream.str();
+			}
+			else
+			{
+				std::stringstream stream;
+				stream << std::setfill('0') << std::setw(sizeof(uint32_t) * 2)
+					   << std::hex << offset;
+				out += "+ " + stream.str();
+			}
+			if (aOutMarkerAt)
+			{
+				*aOutMarkerAt = offset;
+			}
+
+			return out + "]";
+		}
+		case 0b110:
+			return "[rSI]";
+		case 0b111:
+			return "[rDI]";
+		default:
+			break;
+		}
+		break;
 	}
 
 	return "[Unparsed]";
@@ -286,7 +309,8 @@ JMPNear(
 	const std::vector<unsigned char>&			aImage,
 	size_t										aExecutionPointer,
 	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
-	REXState									aREX)
+	REXState									aREX,
+	size_t										aInstructionBase)
 {
 	printf("JMP ");
 
@@ -310,14 +334,15 @@ SUB_RM_IM8(
 	const std::vector<unsigned char>&			aImage,
 	size_t										aExecutionPointer,
 	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
-	REXState									aREX)
+	REXState									aREX,
+	size_t										aInstructionBase)
 {
 	ModRMByte	byte	  = ParseModRM(aImage[aExecutionPointer], aREX);
-	bool		extra	 = false;
+	uint32_t	extra	 = 0;
 	printf("SUB %s, ", RegMem64(byte, aREX, false, aImage, aExecutionPointer + 1, extra).c_str());
 
-	printf("0x%02x", aImage[aExecutionPointer + (extra ? 2 : 1)]);
-	return aExecutionPointer + (extra ? 3 : 2);
+	printf("0x%02x", aImage[aExecutionPointer + 1 + extra]);
+	return aExecutionPointer + 2 + extra;
 }
 
 size_t
@@ -325,14 +350,15 @@ ADD_RM_IM8(
 	const std::vector<unsigned char>&			aImage,
 	size_t										aExecutionPointer,
 	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
-	REXState									aREX)
+	REXState									aREX,
+	size_t										aInstructionBase)
 {
 	ModRMByte	byte	  = ParseModRM(aImage[aExecutionPointer], aREX);
-	bool		extra	 = false;
+	uint32_t	extra	 = 0;
 	printf("ADD %s, ", RegMem64(byte, aREX, false, aImage, aExecutionPointer + 1, extra).c_str());
 
-	printf("0x%02x", aImage[aExecutionPointer + (extra ? 2 : 1)]);
-	return aExecutionPointer + (extra ? 3 : 2);
+	printf("0x%02x", aImage[aExecutionPointer + 1 + extra]);
+	return aExecutionPointer + 2 + extra;
 }
 
 size_t
@@ -340,7 +366,8 @@ CALL_near_32_im(
 	const std::vector<unsigned char>&			aImage,
 	size_t										aExecutionPointer,
 	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
-	REXState									aREX)
+	REXState									aREX,
+	size_t										aInstructionBase)
 {
 	printf("CALL ");
 	int32_t offset;
@@ -370,7 +397,8 @@ RET(
 	const std::vector<unsigned char>&			aImage,
 	size_t										aExecutionPointer,
 	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
-	REXState									aREX)
+	REXState									aREX,
+	size_t										aInstructionBase)
 {
 	printf("RET");
 	if (aImage[aExecutionPointer] == 0xC2)
@@ -384,10 +412,11 @@ RET(
 
 size_t
 MOV(
-	const std::vector<unsigned char>&				aImage,
-	size_t											aExecutionPointer,
-	const std::vector<IMAGE_SECTION_HEADER>&		aSections,
-	REXState										aREX)
+	const std::vector<unsigned char>&			aImage,
+	size_t										aExecutionPointer,
+	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
+	REXState									aREX,
+	size_t										aInstructionBase)
 {
 	printf("MOV ");
 
@@ -409,12 +438,11 @@ MOV(
 		break;
 	case 0xb7:
 		break;
-	case 0xb8:
-	{
+	case 0xb8: {
 		if (aREX.w)
 		{
 			uint64_t data;
-			memcpy(&data,aImage.data()+aExecutionPointer + 1,sizeof(data));
+			memcpy(&data, aImage.data() + aExecutionPointer + 1, sizeof(data));
 			printf("[rAX], 0x%016I64x", data);
 			return aExecutionPointer + 1 + sizeof(data);
 		}
@@ -426,9 +454,8 @@ MOV(
 			return aExecutionPointer + 1 + sizeof(data);
 		}
 	}
-		break;
-	case 0xb9: 
-	{
+	break;
+	case 0xb9: {
 		if (aREX.w)
 		{
 			uint64_t data;
@@ -444,7 +471,7 @@ MOV(
 			return aExecutionPointer + 1 + sizeof(data);
 		}
 	}
-		break;
+	break;
 	case 0xba:
 		break;
 	case 0xbb:
@@ -461,17 +488,61 @@ MOV(
 		break;
 	}
 
-	PrintAround(aImage,aExecutionPointer + 1);
+	PrintAround(aImage, aExecutionPointer + 1);
 	return -1;
 }
+size_t
+CMP(
+	const std::vector<unsigned char>&			aImage,
+	size_t										aExecutionPointer,
+	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
+	REXState									aREX,
+	size_t										aInstructionBase)
+{
+	printf("CMP ");
 
+	switch (aImage[aExecutionPointer])
+	{
+	case 0x39: {
+		ModRMByte	byte	  = ParseModRM(aImage[aExecutionPointer + 1], aREX);
+		uint32_t	extra1	 = 0;
+		uint32_t	extra2	 = 0;
+
+		int32_t		offset	= 0;
+
+		printf("%s", RegMem64(byte, aREX, false, aImage, aExecutionPointer + 2, extra1, &offset).c_str());
+		printf(", %s", RegMem64(byte, aREX, true, aImage, aExecutionPointer + 2, extra2).c_str());
+
+		if (offset != 0)
+		{
+			size_t loc = aExecutionPointer + 2 + extra1 + offset;
+			printf("\t0x%08zx", loc);
+			if (aREX.w)
+			{
+				uint64_t toCmp;
+				memcpy(&toCmp,aImage.data() + loc,sizeof(toCmp));
+				printf(": %016I64x",toCmp);
+			}
+
+		}
+
+		return aExecutionPointer + 2 + extra1;
+	}
+	break;
+	}
+
+	printf("unmapped cmp opcode %02x", aImage[aExecutionPointer]);
+	PrintAround(aImage, aExecutionPointer + 1);
+	return -1;
+}
 
 size_t
 ModRMExtension(
 	const std::vector<unsigned char>&			aImage,
 	size_t										aExecutionPointer,
 	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
-	REXState									aREX)
+	REXState									aREX,
+	size_t										aInstructionBase)
 {
 	std::map<unsigned char, std::map<unsigned char, Instruction>> ModRMExtesionTable;
 
@@ -486,7 +557,7 @@ ModRMExtension(
 
 		if (ModRMExtesionTable[aImage[aExecutionPointer]].count(byte.reg) != 0)
 		{
-			return ModRMExtesionTable[aImage[aExecutionPointer]][byte.reg](aImage, aExecutionPointer + 1, aSections, aREX);
+			return ModRMExtesionTable[aImage[aExecutionPointer]][byte.reg](aImage, aExecutionPointer + 1, aSections, aREX, aInstructionBase);
 		}
 		else
 		{
@@ -509,6 +580,7 @@ REXPrefix(
 	size_t										aExecutionPointer,
 	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
 	REXState									aREX,
+	size_t										aInstructionBase,
 	const std::map<unsigned char, Instruction>& aOpcodeTable)
 {
 	unsigned char nextInstruction = aImage[aExecutionPointer + 1];
@@ -530,7 +602,7 @@ REXPrefix(
 		rex.x	= !!(aImage[aExecutionPointer] & 0b00000010);
 		rex.b	= !!(aImage[aExecutionPointer] & 0b00000001);
 
-		return (it->second)(aImage, aExecutionPointer + 1, aSections, rex);
+		return (it->second)(aImage, aExecutionPointer + 1, aSections, rex, aInstructionBase);
 	}
 	else
 	{
@@ -548,16 +620,18 @@ ExploreCode(
 {
 	std::map<unsigned char, Instruction> legacyOpCodeTable;
 
-	legacyOpCodeTable[0x40] = std::bind(REXPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::ref(legacyOpCodeTable));
-	for (unsigned char i	= 0x41; i <= 0x4F; i++)
-		legacyOpCodeTable[i] = legacyOpCodeTable[0x40];
+	for (unsigned char	i   = 0x38; i <= 0x3d; i++)
+		legacyOpCodeTable[i] = CMP;
+
+	for (unsigned char	i   = 0x40; i <= 0x4F; i++)
+		legacyOpCodeTable[i] = std::bind(REXPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::ref(legacyOpCodeTable));
 
 	legacyOpCodeTable[0x80] = ModRMExtension;
 	legacyOpCodeTable[0x81] = ModRMExtension;
 	legacyOpCodeTable[0x82] = ModRMExtension;
 	legacyOpCodeTable[0x83] = ModRMExtension;
 
-	for (unsigned char i	= 0x88; i <= 0x8c; i++)
+	for (unsigned char	i   = 0x88; i <= 0x8c; i++)
 		legacyOpCodeTable[i] = MOV;
 
 	legacyOpCodeTable[0xc2] = RET;
@@ -566,7 +640,7 @@ ExploreCode(
 	legacyOpCodeTable[0xc6] = ModRMExtension;
 	legacyOpCodeTable[0xc7] = ModRMExtension;
 
-	for (unsigned char i = 0xb0; i <= 0xbF; i++)
+	for (unsigned char	i   = 0xb0; i <= 0xbF; i++)
 		legacyOpCodeTable[i] = MOV;
 
 	legacyOpCodeTable[0xE8] = CALL_near_32_im;
@@ -579,7 +653,7 @@ ExploreCode(
 	rex.b	= false;
 
 	AddFunction("Main", aExecutionStart);
-	for (size_t i	= 0; i < globalFunctions.size(); i++)
+	for (size_t			i	= 0; i < globalFunctions.size(); i++)
 	{
 		printf("%08zx [%s]", globalFunctions[i].myAddress, globalFunctions[i].myName.c_str());
 		size_t executionPointer = globalFunctions[i].myAddress;
@@ -589,7 +663,7 @@ ExploreCode(
 			printf("\n  0x%08zx ", executionPointer);
 			if (legacyOpCodeTable.count(aImage[executionPointer]))
 			{
-				executionPointer = legacyOpCodeTable[aImage[executionPointer]](aImage, executionPointer, aSections, rex);
+				executionPointer = legacyOpCodeTable[aImage[executionPointer]](aImage, executionPointer, aSections, rex, executionPointer);
 			}
 			else
 			{
