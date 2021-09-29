@@ -1005,3 +1005,47 @@ DumpImportedSymbols(
 		}
 	}
 }
+
+template <>
+void
+PrintSignedHex<int8_t>(
+	int8_t								aValue)
+{
+	if (aValue < 0)
+		printf("-%02x", -aValue);
+	else
+		printf("+%02x", aValue);
+}
+
+template <>
+void
+PrintSignedHex<int16_t>(
+	int16_t								aValue)
+{
+	if (aValue < 0)
+		printf("-%04x", -aValue);
+	else
+		printf("+%04x", aValue);
+}
+
+template <>
+void
+PrintSignedHex<int32_t>(
+	int32_t								aValue)
+{
+	if (aValue < 0)
+		printf("-%08x", -aValue);
+	else
+		printf("+%08x", aValue);
+}
+
+template <>
+void
+PrintSignedHex<int64_t>(
+	int64_t								aValue)
+{
+	if (aValue < 0)
+		printf("-%016I64x", -aValue);
+	else
+		printf("+%016I64x", aValue);
+}

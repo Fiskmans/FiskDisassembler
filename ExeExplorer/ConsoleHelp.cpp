@@ -20,3 +20,17 @@ SetColorGreen()
 	HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 	SetConsoleTextAttribute(hConsole, FOREGROUND_GREEN);
 }
+
+void
+SetColorBlue()
+{
+	HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+	SetConsoleTextAttribute(hConsole, FOREGROUND_BLUE);
+}
+
+void
+SetColorLightBlue()
+{
+	HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+	SetConsoleTextAttribute(hConsole, FOREGROUND_BLUE | FOREGROUND_INTENSITY);
+}

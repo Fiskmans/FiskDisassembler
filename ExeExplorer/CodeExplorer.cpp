@@ -1,6 +1,7 @@
 #include "CodeExplorer.h"
 #include "Printers.h"
 
+#include <algorithm>
 #include <functional>
 #include <iomanip>
 #include <map>
@@ -11,28 +12,139 @@ struct BranchType
 {
 	std::string myName;
 	size_t		myAddress;
+	bool		myExpanded;
 };
+namespace globals {
+	std::vector<BranchType> globalFunctions;
+	std::vector<BranchType> globalBranches;
+} // globals
 
 std::string
-GetOrGenerateFunctionName(size_t				aAddress)
+GetOrGenerateFunctionName(
+	size_t										aAddress)
 {
 	static std::map<size_t, std::string> names;
 	if (names.count(aAddress) == 0)
 	{
 		names[aAddress] = "function_" + std::to_string(names.size());
+
+		for (BranchType& b : globals::globalFunctions)
+		{
+			if (b.myAddress == aAddress)
+			{
+				names[aAddress] = b.myName;
+			}
+		}
 	}
 
 	return names[aAddress];
 }
 
-std::vector<BranchType>																													globalFunctions;
+std::string
+GetOrGenerateLocationName(
+	size_t										aAddress)
+{
+	static std::map<size_t, std::string> names;
+	if (names.count(aAddress) == 0)
+	{
+		names[aAddress] = "location_" + std::to_string(names.size());
+	}
+
+	return names[aAddress];
+}
 
 void
 AddFunction(
-	std::string									aName,
 	size_t										aAddress)
 {
-	globalFunctions.push_back({aName, aAddress});
+	for (BranchType& b : globals::globalFunctions)
+		if (b.myAddress == aAddress)
+			return;
+
+	BranchType b{GetOrGenerateFunctionName(aAddress), aAddress, false};
+
+	globals::globalFunctions.insert(
+		std::upper_bound(
+			globals::globalFunctions.begin(),
+			globals::globalFunctions.end(),
+			b,
+			[](const BranchType& aA, const BranchType& aB) { return aA.myAddress < aB.myAddress; }),
+		b);
+}
+
+void
+AddBranch(
+	size_t										aAddress)
+{
+	for (BranchType& b : globals::globalBranches)
+		if (b.myAddress == aAddress)
+			return;
+
+	BranchType b{GetOrGenerateLocationName(aAddress), aAddress, false};
+
+	globals::globalBranches.insert(
+		std::upper_bound(
+			globals::globalBranches.begin(),
+			globals::globalBranches.end(),
+			b,
+			[](const BranchType& aA, const BranchType& aB) { return aA.myAddress < aB.myAddress; }),
+		b);
+}
+
+void
+PrintFunction(
+	size_t										aAddress)
+{
+	PRINTF_LIGHTBLUE("%s", GetOrGenerateFunctionName(aAddress).c_str());
+}
+
+void
+PrintLocation(
+	size_t										aAddress)
+{
+	PRINTF_BLUE("%s", GetOrGenerateLocationName(aAddress).c_str());
+}
+
+template <typename Type>
+std::string
+StringSignedHex(
+	Type										aValue)
+{
+	if (aValue < 0)
+	{
+		std::stringstream stream;
+		stream << std::setfill('0') << std::setw(sizeof(Type) * 2)
+			   << std::hex << -aValue;
+		return "-" + stream.str();
+	}
+	else
+	{
+		std::stringstream stream;
+		stream << std::setfill('0') << std::setw(sizeof(Type) * 2)
+			   << std::hex << aValue;
+		return "+" + stream.str();
+	}
+}
+
+template <>
+std::string
+StringSignedHex<uint8_t>(
+	uint8_t										aValue)
+{
+	if (aValue < 0)
+	{
+		std::stringstream stream;
+		stream << std::setfill('0') << std::setw(2)
+			   << std::hex << -static_cast<int16_t>(aValue);
+		return "-" + stream.str();
+	}
+	else
+	{
+		std::stringstream stream;
+		stream << std::setfill('0') << std::setw(2)
+			   << std::hex << static_cast<int16_t>(aValue);
+		return "+" + stream.str();
+	}
 }
 
 struct ModRMByte
@@ -57,7 +169,7 @@ struct REXState
 	bool	b : 1;
 };
 
-typedef std::function<size_t(const std::vector<unsigned char>&, size_t, const std::vector<IMAGE_SECTION_HEADER>&, REXState, size_t)>	Instruction;
+typedef std::function<size_t(const std::vector<unsigned char>&, size_t, const std::vector<IMAGE_SECTION_HEADER>&, REXState, size_t)> Instruction;
 
 ModRMByte
 ParseModRM(
@@ -176,10 +288,34 @@ RegMem64(
 {
 	aOutExtraConsumed = 0;
 
+	if (aSelector)
+	{
+		switch (aModRM.reg)
+		{
+		case 0b000:
+			return "[rAX]";
+		case 0b001:
+			return "[rCX]";
+		case 0b010:
+			return "[rDX]";
+		case 0b011:
+			return "[rBX]";
+		case 0b100:
+			return "[rSP]";
+		case 0b101:
+			return "[rBP]";
+		case 0b110:
+			return "[rSI]";
+		case 0b111:
+			return "[rDI]";
+		}
+		return "[unkwon reg field]";
+	}
+
 	switch (aModRM.mod)
 	{
 	case 0b11:
-		switch (aSelector ? aModRM.reg : aModRM.rm)
+		switch (aModRM.rm)
 		{
 		case 0b000:
 			return "[rAX]";
@@ -202,18 +338,54 @@ RegMem64(
 		}
 		break;
 	case 0b01:
-		switch (aSelector ? aModRM.reg : aModRM.rm)
+		switch (aModRM.rm)
 		{
 		case 0b000:
-			return "[rAX] + disp8";
+			return "[rAX]";
 		case 0b001:
 			return "[rCX] + disp8";
 		case 0b010:
 			return "[rDX] + disp8";
 		case 0b011:
 			return "[rBX] + disp8";
-		case 0b100:
-			return "[SIB] + disp8";
+		case 0b100: {
+			SIBByte		sib = ParseSIB(aImage[aNextByte], aREX);
+
+			std::string out = "[";
+			switch (sib.base)
+			{
+			case 0b000:
+				out += "rAX";
+				break;
+			case 0b001:
+				out += "rCX";
+				break;
+			case 0b010:
+				out += "rDX";
+				break;
+			case 0b011:
+				out += "rBX";
+				break;
+			case 0b100:
+				out += "rSP";
+				break;
+			case 0b101:
+				out += "rBP";
+				break;
+			case 0b110:
+				out += "rSI";
+				break;
+			case 0b111:
+				out += "rDI";
+				break;
+			}
+			uint8_t offset;
+			memcpy(&offset, aImage.data() + aNextByte + 1, sizeof(offset));
+			out += StringSignedHex(offset) + "]";
+			aOutExtraConsumed = 2;
+
+			return out;
+		}
 		case 0b101:
 			return "[how ??] + disp8";
 		case 0b110:
@@ -225,7 +397,7 @@ RegMem64(
 		}
 		break;
 	case 0b10:
-		switch (aSelector ? aModRM.reg : aModRM.rm)
+		switch (aModRM.rm)
 		{
 		case 0b000:
 			return "[rAX] + disp32";
@@ -248,7 +420,7 @@ RegMem64(
 		}
 		break;
 	case 0b00:
-		switch (aSelector ? aModRM.reg : aModRM.rm)
+		switch (aModRM.rm)
 		{
 		case 0b000:
 			return "[rAX]";
@@ -270,20 +442,7 @@ RegMem64(
 			int32_t		offset;
 			memcpy(&offset, aImage.data() + aNextByte, sizeof(offset));
 			aOutExtraConsumed = sizeof(offset);
-			if (offset < 0)
-			{
-				std::stringstream stream;
-				stream << std::setfill('0') << std::setw(sizeof(uint32_t) * 2)
-					   << std::hex << -offset;
-				out += "- " + stream.str();
-			}
-			else
-			{
-				std::stringstream stream;
-				stream << std::setfill('0') << std::setw(sizeof(uint32_t) * 2)
-					   << std::hex << offset;
-				out += "+ " + stream.str();
-			}
+			out += StringSignedHex(offset);
 			if (aOutMarkerAt)
 			{
 				*aOutMarkerAt = offset;
@@ -313,20 +472,82 @@ JMPNear(
 	size_t										aInstructionBase)
 {
 	printf("JMP ");
-
-	int32_t offset;
-	memcpy(&offset, aImage.data() + aExecutionPointer + 1, sizeof(offset));
-
-	if (offset > 0)
+	switch (aImage[aExecutionPointer])
 	{
-		printf("+%04x ", offset);
+	case 0xe9: {
+		int32_t offset;
+		memcpy(&offset, aImage.data() + aExecutionPointer + 1, sizeof(offset));
+
+		PrintSignedHex(offset);
+		size_t target = aExecutionPointer + 1 + sizeof(offset) + offset;
+		AddBranch(target);
+
+		printf("\t\t0x%08zx  ", target);
+		PrintLocation(target);
+		return -1;
 	}
-	else
+	case 0xEB: {
+		int8_t offset;
+		memcpy(&offset, aImage.data() + aExecutionPointer + 1, sizeof(offset));
+
+		PrintSignedHex(offset);
+		size_t target = aExecutionPointer + 1 + sizeof(offset) + offset;
+		AddBranch(target);
+
+		printf("\t\t\t0x%08zx  ", target);
+		PrintLocation(target);
+		return -1;
+	}
+	}
+
+	PRINTF_RED("unkown mov");
+	PrintAround(aImage, aInstructionBase);
+	return -1;
+}
+
+size_t
+JCC(
+	const std::vector<unsigned char>&			aImage,
+	size_t										aExecutionPointer,
+	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
+	REXState									aREX,
+	size_t										aInstructionBase)
+{
+
+	switch (aImage[aExecutionPointer])
 	{
-		printf("-%04x ", -offset);
+	case 0x74: {
+		printf("JZ  ");
+		int8_t	offset;
+		memcpy(&offset, aImage.data() + aExecutionPointer + 1, sizeof(offset));
+		size_t	dest = aExecutionPointer + 1 + sizeof(offset) + offset;
+		AddBranch(dest);
+
+		PrintSignedHex(offset);
+		printf("\t\t\t0x%08zx  ", dest);
+		PrintLocation(dest);
+
+		return aExecutionPointer + 2;
 	}
-	printf("(0x%08zx)", aExecutionPointer + 5 + offset);
-	return aExecutionPointer + 5 + offset;
+	case 0x75: {
+		printf("JZ  ");
+		int8_t	offset;
+		memcpy(&offset, aImage.data() + aExecutionPointer + 1, sizeof(offset));
+		size_t	dest = aExecutionPointer + 1 + sizeof(offset) + offset;
+		AddBranch(dest);
+
+		PrintSignedHex(offset);
+		printf("\t\t\t0x%08zx  ", dest);
+		PrintLocation(dest);
+
+		return aExecutionPointer + 2;
+	}
+	}
+
+	printf("unkown jcc type");
+	PrintAround(aImage, aExecutionPointer);
+
+	return -1;
 }
 
 size_t
@@ -385,9 +606,10 @@ CALL_near_32_im(
 	{
 		printf("-%04x ", -offset);
 	}
-	printf("\t\t0x%08zx  %s", target, name.c_str());
+	printf("\t\t0x%08zx  ", target);
+	PrintFunction(target);
 
-	AddFunction(name, target);
+	AddFunction(target);
 
 	return nextInstruction;
 }
@@ -422,6 +644,63 @@ MOV(
 
 	switch (aImage[aExecutionPointer])
 	{
+	case 0x88: {
+		uint32_t	extra1;
+		uint32_t	extra2;
+		int32_t		marker	= 0;
+		ModRMByte	byte	  = ParseModRM(aImage[aExecutionPointer + 1], aREX);
+		printf("%s, ", RegMem64(byte, aREX, false, aImage, aExecutionPointer + 2, extra1, &marker).c_str());
+		printf("%s", RegMem64(byte, aREX, true, aImage, aExecutionPointer + 2, extra2).c_str());
+
+		if (marker != 0)
+		{
+			size_t loc = aExecutionPointer + 2 + extra1 + marker;
+			printf("\t0x%08zx", loc);
+		}
+		return aExecutionPointer + 2 + extra1;
+	}
+	case 0x89: {
+		uint32_t	extra1;
+		uint32_t	extra2;
+		int32_t		marker	= 0;
+		ModRMByte	byte	  = ParseModRM(aImage[aExecutionPointer + 1], aREX);
+		printf("%s, ", RegMem64(byte, aREX, false, aImage, aExecutionPointer + 2, extra1, &marker).c_str());
+		printf("%s", RegMem64(byte, aREX, true, aImage, aExecutionPointer + 2, extra2).c_str());
+
+		if (marker != 0)
+		{
+			size_t loc = aExecutionPointer + 2 + extra1 + marker;
+			printf("\t0x%08zx", loc);
+		}
+		return aExecutionPointer + 2 + extra1;
+	}
+
+	case 0x8B: {
+		uint32_t	extra1;
+		uint32_t	extra2;
+		int32_t		marker	= 0;
+		ModRMByte	byte	  = ParseModRM(aImage[aExecutionPointer + 1], aREX);
+		printf("%s, ", RegMem64(byte, aREX, true, aImage, aExecutionPointer + 2, extra1).c_str());
+		printf("%s", RegMem64(byte, aREX, false, aImage, aExecutionPointer + 2, extra2, &marker).c_str());
+
+		if (marker != 0)
+		{
+			size_t loc = aExecutionPointer + 2 + extra2 + marker;
+			printf("\t0x%08zx", loc);
+			if (aREX.w)
+			{
+				uint64_t toCmp;
+				memcpy(&toCmp, aImage.data() + loc, sizeof(toCmp));
+				printf(": %016I64x", toCmp);
+			}
+			else
+			{
+				int a = 10;
+			}
+		}
+		return aExecutionPointer + 2 + extra2;
+	}
+
 	case 0xb0:
 		break;
 	case 0xb1:
@@ -484,13 +763,109 @@ MOV(
 		break;
 	case 0xbf:
 		break;
-	default:
-		break;
 	}
 
+	printf("unkown mov type");
 	PrintAround(aImage, aExecutionPointer + 1);
 	return -1;
 }
+
+size_t
+MOV_RM(
+	const std::vector<unsigned char>&			aImage,
+	size_t										aExecutionPointer,
+	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
+	REXState									aREX,
+	size_t										aInstructionBase)
+{
+	printf("MOV ");
+
+	ModRMByte byte = ParseModRM(aImage[aExecutionPointer], aREX);
+
+	switch (aImage[aExecutionPointer - 1])
+	{
+	case 0xc6: {
+		uint32_t	extra;
+		int32_t		marker;
+		printf("%s", RegMem64(byte, aREX, false, aImage, aExecutionPointer + 1, extra, &marker).c_str());
+
+		uint8_t data;
+		memcpy(&data, aImage.data() + aExecutionPointer + 1, sizeof(data));
+		printf(", 0x%02x", data);
+		if (marker != 0)
+		{
+			size_t loc = aExecutionPointer + 1 + sizeof(data) + extra + marker;
+			printf("\t0x%08zx", loc);
+		}
+		return aExecutionPointer + 1 + sizeof(data) + extra;
+	}
+	break;
+	case 0xc7:
+		break;
+	}
+
+	printf("unkown mov_rm type");
+	PrintAround(aImage, aExecutionPointer + 1);
+	return -1;
+}
+
+size_t
+MOVZX(
+	const std::vector<unsigned char>&			aImage,
+	size_t										aExecutionPointer,
+	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
+	REXState									aREX,
+	size_t										aInstructionBase)
+{
+	printf("MOVZX ");
+
+	switch (aImage[aExecutionPointer])
+	{
+	case 0xB6: {
+		uint32_t	extra1;
+		uint32_t	extra2;
+		int32_t		marker	= 0;
+		ModRMByte	byte	  = ParseModRM(aImage[aExecutionPointer + 1], aREX);
+		printf("%s, ", RegMem64(byte, aREX, true, aImage, aExecutionPointer + 2, extra1).c_str());
+		printf("%s", RegMem64(byte, aREX, false, aImage, aExecutionPointer + 2, extra2, &marker).c_str());
+
+		if (marker != 0)
+		{
+			size_t loc = aExecutionPointer + 2 + extra2 + marker;
+			printf("\t0x%08zx", loc);
+
+			uint8_t toMov;
+			memcpy(&toMov, aImage.data() + loc, sizeof(toMov));
+			printf(": %02x", toMov);
+		}
+		return aExecutionPointer + 2 + extra2;
+	}
+	case 0xB7: {
+		uint32_t	extra1;
+		uint32_t	extra2;
+		int32_t		marker	= 0;
+		ModRMByte	byte	  = ParseModRM(aImage[aExecutionPointer + 1], aREX);
+		printf("%s, ", RegMem64(byte, aREX, true, aImage, aExecutionPointer + 2, extra1).c_str());
+		printf("%s", RegMem64(byte, aREX, false, aImage, aExecutionPointer + 2, extra2, &marker).c_str());
+
+		if (marker != 0)
+		{
+			size_t loc = aExecutionPointer + 2 + extra2 + marker;
+			printf("\t0x%08zx", loc);
+
+			uint16_t toMov;
+			memcpy(&toMov, aImage.data() + loc, sizeof(toMov));
+			printf(": %04x", toMov);
+		}
+		return aExecutionPointer + 2 + extra2;
+	}
+	}
+
+	printf("unkown movzx type %02x", aImage[aExecutionPointer]);
+	PrintAround(aImage, aExecutionPointer);
+	return -1;
+}
+
 size_t
 CMP(
 	const std::vector<unsigned char>&			aImage,
@@ -520,10 +895,9 @@ CMP(
 			if (aREX.w)
 			{
 				uint64_t toCmp;
-				memcpy(&toCmp,aImage.data() + loc,sizeof(toCmp));
-				printf(": %016I64x",toCmp);
+				memcpy(&toCmp, aImage.data() + loc, sizeof(toCmp));
+				printf(": %016I64x", toCmp);
 			}
-
 		}
 
 		return aExecutionPointer + 2 + extra1;
@@ -534,6 +908,65 @@ CMP(
 	printf("unmapped cmp opcode %02x", aImage[aExecutionPointer]);
 	PrintAround(aImage, aExecutionPointer + 1);
 	return -1;
+}
+
+size_t
+TEST(
+	const std::vector<unsigned char>&			aImage,
+	size_t										aExecutionPointer,
+	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
+	REXState									aREX,
+	size_t										aInstructionBase)
+{
+	printf("TEST ");
+
+	switch (aImage[aExecutionPointer])
+	{
+	case 0x85: {
+		ModRMByte	byte	  = ParseModRM(aImage[aExecutionPointer + 1], aREX);
+		uint32_t	extra1	 = 0;
+		uint32_t	extra2	 = 0;
+
+		int32_t		offset	= 0;
+
+		printf("%s", RegMem64(byte, aREX, false, aImage, aExecutionPointer + 2, extra1, &offset).c_str());
+		printf(", %s", RegMem64(byte, aREX, true, aImage, aExecutionPointer + 2, extra2).c_str());
+
+		if (offset != 0)
+		{
+			size_t loc = aExecutionPointer + 2 + extra1 + offset;
+			printf("\t0x%08zx", loc);
+			if (aREX.w)
+			{
+				uint64_t toCmp;
+				memcpy(&toCmp, aImage.data() + loc, sizeof(toCmp));
+				printf(": %016I64x", toCmp);
+			}
+		}
+
+		return aExecutionPointer + 2 + extra1;
+	}
+	break;
+	}
+
+	printf("unmapped test opcode %02x", aImage[aExecutionPointer]);
+	PrintAround(aImage, aExecutionPointer + 1);
+	return -1;
+}
+
+size_t
+NOT_RM(
+	const std::vector<unsigned char>&			aImage,
+	size_t										aExecutionPointer,
+	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
+	REXState									aREX,
+	size_t										aInstructionBase)
+{
+	printf("NOT ");
+	ModRMByte	byte = ParseModRM(aImage[aExecutionPointer], aREX);
+	uint32_t	extra;
+	printf("%s", RegMem64(byte, aREX, false, aImage, aExecutionPointer + 1, extra).c_str());
+	return aExecutionPointer + 1;
 }
 
 size_t
@@ -549,7 +982,10 @@ ModRMExtension(
 	ModRMExtesionTable[0x83][0x0]	= ADD_RM_IM8;
 	ModRMExtesionTable[0x83][0x5]	= SUB_RM_IM8;
 
-	ModRMExtesionTable[0xc7][0x0]	= MOV;
+	ModRMExtesionTable[0xc7][0x0]	= MOV_RM;
+	ModRMExtesionTable[0xc6][0x0]	= MOV_RM;
+
+	ModRMExtesionTable[0xf7][0x2]	= NOT_RM;
 
 	if (ModRMExtesionTable.count(aImage[aExecutionPointer]) != 0)
 	{
@@ -612,6 +1048,33 @@ REXPrefix(
 	}
 }
 
+size_t
+SecondaryOPCodeTable(
+	const std::vector<unsigned char>&			aImage,
+	size_t										aExecutionPointer,
+	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
+	REXState									aREX,
+	size_t										aInstructionBase)
+{
+	std::map<unsigned char, Instruction> secondaryOpcodeTable;
+
+	secondaryOpcodeTable[0xb6]		= MOVZX;
+	secondaryOpcodeTable[0xb7]		= MOVZX;
+
+	unsigned char nextInstruction	= aImage[aExecutionPointer + 1];
+
+	if (secondaryOpcodeTable.count(nextInstruction) != 0)
+	{
+		return secondaryOpcodeTable[nextInstruction](aImage, aExecutionPointer + 1, aSections, aREX, aInstructionBase);
+	}
+	else
+	{
+		PRINTF_RED("Unkown secondary opcode: %02x\n", nextInstruction);
+		PrintAround(aImage, aExecutionPointer + 1, aSections);
+		return -1;
+	}
+}
+
 void
 ExploreCode(
 	const std::vector<unsigned char>&			aImage,
@@ -620,16 +1083,23 @@ ExploreCode(
 {
 	std::map<unsigned char, Instruction> legacyOpCodeTable;
 
+	legacyOpCodeTable[0x0f] = SecondaryOPCodeTable;
+
 	for (unsigned char	i   = 0x38; i <= 0x3d; i++)
 		legacyOpCodeTable[i] = CMP;
 
 	for (unsigned char	i   = 0x40; i <= 0x4F; i++)
 		legacyOpCodeTable[i] = std::bind(REXPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::ref(legacyOpCodeTable));
 
+	legacyOpCodeTable[0x74] = JCC;
+	legacyOpCodeTable[0x75] = JCC;
+
 	legacyOpCodeTable[0x80] = ModRMExtension;
 	legacyOpCodeTable[0x81] = ModRMExtension;
 	legacyOpCodeTable[0x82] = ModRMExtension;
 	legacyOpCodeTable[0x83] = ModRMExtension;
+
+	legacyOpCodeTable[0x85] = TEST;
 
 	for (unsigned char	i   = 0x88; i <= 0x8c; i++)
 		legacyOpCodeTable[i] = MOV;
@@ -643,8 +1113,12 @@ ExploreCode(
 	for (unsigned char	i   = 0xb0; i <= 0xbF; i++)
 		legacyOpCodeTable[i] = MOV;
 
+	legacyOpCodeTable[0xF6] = ModRMExtension;
+	legacyOpCodeTable[0xF7] = ModRMExtension;
+
 	legacyOpCodeTable[0xE8] = CALL_near_32_im;
 	legacyOpCodeTable[0xE9] = JMPNear;
+	legacyOpCodeTable[0xEB] = JMPNear;
 
 	REXState rex;
 	rex.w	= false;
@@ -652,14 +1126,44 @@ ExploreCode(
 	rex.x	= false;
 	rex.b	= false;
 
-	AddFunction("Main", aExecutionStart);
-	for (size_t			i	= 0; i < globalFunctions.size(); i++)
+	globals::globalFunctions.push_back({"Main", aExecutionStart});
+
+	do
 	{
-		printf("%08zx [%s]", globalFunctions[i].myAddress, globalFunctions[i].myName.c_str());
-		size_t executionPointer = globalFunctions[i].myAddress;
+		size_t executionPointer = -1;
+		for (BranchType& function : globals::globalFunctions)
+		{
+			if (function.myExpanded)
+				continue;
+			;
+
+			printf("%08zx [", function.myAddress);
+			PrintFunction(function.myAddress);
+			printf("]");
+			function.myExpanded = true;
+			executionPointer	= function.myAddress;
+			break;
+		}
+
+		if (executionPointer == -1)
+			break;
 
 		while (executionPointer != -1)
 		{
+			for (size_t i = 0; i < globals::globalBranches.size(); i++)
+			{
+				if (globals::globalBranches[i].myExpanded)
+					continue;
+
+				if (executionPointer == globals::globalBranches[i].myAddress)
+				{
+					printf("\n[");
+					PrintLocation(executionPointer);
+					printf("]");
+					globals::globalBranches[i].myExpanded = true;
+					break;
+				}
+			}
 			printf("\n  0x%08zx ", executionPointer);
 			if (legacyOpCodeTable.count(aImage[executionPointer]))
 			{
@@ -669,9 +1173,21 @@ ExploreCode(
 			{
 				PRINTF_RED("Unkown instruction: %02x\n", aImage[executionPointer]);
 				PrintAround(aImage, executionPointer, aSections);
-				break;
+				executionPointer = -1;
+			}
+
+			if (executionPointer == -1)
+			{
+				for (BranchType& b : globals::globalBranches)
+				{
+					if (!b.myExpanded)
+					{
+						executionPointer = b.myAddress;
+						break;
+					}
+				}
 			}
 		}
 		printf("\n\n");
-	}
+	} while (true);
 }
