@@ -6,5 +6,6 @@
 
 void ExploreCode(
 			const std::vector<unsigned char>&			aImage,
+			size_t										aImageBase,
 			size_t										aExecutionStart,
 			const std::vector<IMAGE_SECTION_HEADER>&	aSections);

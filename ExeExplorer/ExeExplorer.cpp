@@ -138,9 +138,10 @@ main()
 	std::vector<unsigned char> image = AssembleImage(imageSize, imageBase, fileContent, sectionHeaders);
 
 
-	DumpImportedSymbols(image,dataDirectories);
+	DumpImportedSymbols(image, dataDirectories);
+	//DumpDebugTable(image, dataDirectories, sectionHeaders);
 
-	ExploreCode(image, entryPointAddress, sectionHeaders);
+	ExploreCode(image, imageBase, entryPointAddress, sectionHeaders);
 
 	system("pause");
 }

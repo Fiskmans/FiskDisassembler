@@ -1,5 +1,8 @@
 #include "ConsoleHelp.h"
 
+
+#include <stdio.h>
+
 void
 ResetColor()
 {
@@ -33,4 +36,17 @@ SetColorLightBlue()
 {
 	HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 	SetConsoleTextAttribute(hConsole, FOREGROUND_BLUE | FOREGROUND_INTENSITY);
+}
+
+void SetColumn(size_t aColumn)
+{
+	HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+
+	CONSOLE_SCREEN_BUFFER_INFO info;
+	GetConsoleScreenBufferInfo(hConsole,&info);
+	COORD pos;
+	pos.X = aColumn;
+	pos.Y = info.dwCursorPosition.Y;
+	if(!SetConsoleCursorPosition(hConsole, pos))
+		printf("halp %x", GetLastError());
 }

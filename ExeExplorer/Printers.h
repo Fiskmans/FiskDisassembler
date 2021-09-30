@@ -45,26 +45,31 @@ void	DumpImportedSymbols(
 			const std::vector<unsigned char>&			aData,
 			const std::vector<IMAGE_DATA_DIRECTORY>		aDirectories);
 
+void	DumpDebugTable(
+			const std::vector<unsigned char>&			aData,
+			const std::vector<IMAGE_DATA_DIRECTORY>&	aDirectories,
+			const std::vector<IMAGE_SECTION_HEADER>&	aSections);
+
 template <typename Type>
 void
-PrintSignedHex(
-	Type												aValue);
+		PrintSignedHex(
+			Type										aValue);
 
-template<>
-void PrintSignedHex<int8_t>(
-			int8_t						aValue);
+template <>
+void	PrintSignedHex<int8_t>(
+			int8_t										aValue);
 
 template <>
 void
-PrintSignedHex<int16_t>(
-	int16_t								aValue);
+		PrintSignedHex<int16_t>(
+			int16_t										aValue);
 
 template <>
 void
-PrintSignedHex<int32_t>(
-	int32_t								aValue);
+		PrintSignedHex<int32_t>(
+			int32_t										aValue);
 
 template <>
 void
-PrintSignedHex<int64_t>(
-	int64_t								aValue);
+		PrintSignedHex<int64_t>(
+			int64_t										aValue);

@@ -8,6 +8,8 @@ void	SetColorGreen();
 void	SetColorBlue();
 void	SetColorLightBlue();
 
+void	SetColumn(size_t aColumn);
+
 #define PRINTF_RED(...)      \
 	{                        \
 		SetColorRed();       \

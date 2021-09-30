@@ -1006,10 +1006,149 @@ DumpImportedSymbols(
 	}
 }
 
+void
+DumpDebugTable(
+	const std::vector<unsigned char>&			aData,
+	const std::vector<IMAGE_DATA_DIRECTORY>&	aDirectories,
+	const std::vector<IMAGE_SECTION_HEADER>&	aSections)
+{
+	if (aDirectories.size() < 7)
+	{
+		PRINTF_RED("No symbols imported, NO DEBUG_DIRECTORY");
+		return;
+	}
+
+	if (aDirectories[6].Size == 0)
+	{
+		PRINTF_RED("No symbols imported, EMPTY DEBUG_DIRECTORY");
+		return;
+	}
+
+	IMAGE_DEBUG_DIRECTORY debug;
+	if (aDirectories[6].Size == sizeof(debug))
+	{
+		PRINTF_RED("Size missmatch");
+		return;
+	}
+
+	printf("===DEBUG INFORMATION===\n");
+	memcpy(&debug, aData.data() + aDirectories[6].VirtualAddress, sizeof(debug));
+
+	printf(
+		"\tCharacteristics:    %08x\n"
+		"\tTimeStamp:          %08x\n"
+		"\tMajorVer:           %04x\n"
+		"\tMinorVer:           %04x\n"
+		"\tType:               %08x\t",
+		debug.Characteristics,
+		debug.TimeDateStamp,
+		debug.MajorVersion,
+		debug.MinorVersion,
+		debug.Type);
+
+	switch (debug.Type)
+	{
+	case IMAGE_DEBUG_TYPE_UNKNOWN:
+		PRINTF_RED("UNKNOWN");
+		break;
+	case IMAGE_DEBUG_TYPE_COFF:
+		PRINTF_GREEN("COFF");
+		break;
+	case IMAGE_DEBUG_TYPE_CODEVIEW:
+		printf("CODEVIEW");
+		break;
+	case IMAGE_DEBUG_TYPE_FPO:
+		printf("FPO");
+		break;
+	case IMAGE_DEBUG_TYPE_MISC:
+		printf("MISC");
+		break;
+	case IMAGE_DEBUG_TYPE_EXCEPTION:
+		printf("EXCEPTION");
+		break;
+	case IMAGE_DEBUG_TYPE_FIXUP:
+		printf("FIXUP");
+		break;
+	case IMAGE_DEBUG_TYPE_OMAP_TO_SRC:
+		printf("OMAP_TO_SRC");
+		break;
+	case IMAGE_DEBUG_TYPE_OMAP_FROM_SRC:
+		printf("OMAP_FROM_SRC");
+		break;
+	case IMAGE_DEBUG_TYPE_BORLAND:
+		printf("BORLAND");
+		break;
+	case IMAGE_DEBUG_TYPE_RESERVED10:
+		printf("RESERVED10");
+		break;
+	case IMAGE_DEBUG_TYPE_CLSID:
+		printf("CLSID");
+		break;
+	case IMAGE_DEBUG_TYPE_REPRO:
+		printf("REPRO");
+		break;
+	}
+	printf("\n"
+		   "\tSize:               %08x\n"
+		   "\tAddres:             %08x\n"
+		   "\tPointer:            %08x\n",
+		   debug.SizeOfData,
+		   debug.AddressOfRawData,
+		   debug.PointerToRawData);
+
+	if (debug.Type == IMAGE_DEBUG_TYPE_CODEVIEW)
+	{
+		struct IMAGE_CODEVIEW
+		{
+			DWORD	signature;
+			GUID	guid;
+			DWORD	age;
+		};
+
+		IMAGE_CODEVIEW view;
+		memcpy(&view, aData.data() + debug.AddressOfRawData, sizeof(view));
+
+		printf(
+			"CODEVIEW Data\n"
+			"\tSignature:     %08x",
+			view.signature);
+		if (memcmp(&view.signature, "RSDS", 4) == 0)
+		{
+			PRINTF_GREEN(" RSDS\n");
+		}
+		else
+		{
+			PRINTF_RED("Unkown signature");
+		}
+
+		printf(
+			"\tGuid:          %08x-%04x-%04x-%02x%02x%02x%02x%02x%02x%02x%02x\n"
+			"\tAge:           %04x\n"
+			"\tFilename:      %s\n",
+			view.guid.Data1,
+			view.guid.Data2,
+			view.guid.Data3,
+			view.guid.Data4[0],
+			view.guid.Data4[1],
+			view.guid.Data4[2],
+			view.guid.Data4[3],
+			view.guid.Data4[4],
+			view.guid.Data4[5],
+			view.guid.Data4[6],
+			view.guid.Data4[7],
+			view.age,
+			aData.data() + debug.AddressOfRawData + sizeof(view));
+	}
+	else
+	{
+		PrintAround(aData, debug.AddressOfRawData, aSections, 60);
+	}
+}
+
 template <>
 void
 PrintSignedHex<int8_t>(
-	int8_t								aValue)
+	int8_t										aValue)
 {
 	if (aValue < 0)
 		printf("-%02x", -aValue);
@@ -1020,7 +1159,7 @@ PrintSignedHex<int8_t>(
 template <>
 void
 PrintSignedHex<int16_t>(
-	int16_t								aValue)
+	int16_t										aValue)
 {
 	if (aValue < 0)
 		printf("-%04x", -aValue);
@@ -1031,7 +1170,7 @@ PrintSignedHex<int16_t>(
 template <>
 void
 PrintSignedHex<int32_t>(
-	int32_t								aValue)
+	int32_t										aValue)
 {
 	if (aValue < 0)
 		printf("-%08x", -aValue);
@@ -1042,7 +1181,7 @@ PrintSignedHex<int32_t>(
 template <>
 void
 PrintSignedHex<int64_t>(
-	int64_t								aValue)
+	int64_t										aValue)
 {
 	if (aValue < 0)
 		printf("-%016I64x", -aValue);
