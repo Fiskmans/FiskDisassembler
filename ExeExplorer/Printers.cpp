@@ -941,7 +941,7 @@ PrintSections(
 	}
 }
 
-void
+std::vector<Symbol>
 DumpImportedSymbols(
 	const std::vector<unsigned char>&			aData,
 	const std::vector<IMAGE_DATA_DIRECTORY>		aDirectories)
@@ -949,16 +949,17 @@ DumpImportedSymbols(
 	if (aDirectories.size() < 2)
 	{
 		PRINTF_RED("No symbols imported, NO IMPORTDIRECTORY");
-		return;
+		return {};
 	}
 
 	if (aDirectories[1].Size == 0)
 	{
 		PRINTF_RED("No symbols imported, EMPTY IMPORTDIRECTORY");
-		return;
+		return {};
 	}
 	printf("===IMPORTED SYMBOLS===\n");
 
+	std::vector<Symbol> out;
 	size_t readOffset = aDirectories[1].VirtualAddress;
 	while (true)
 	{
@@ -983,6 +984,8 @@ DumpImportedSymbols(
 			description.Name,
 			description.FirstThunk);
 
+		std::string dll = reinterpret_cast<const char*>(aData.data() + description.Name);
+
 		size_t lookupReadOffset = description.Characteristics;
 		while (true)
 		{
@@ -1001,9 +1004,17 @@ DumpImportedSymbols(
 				uint16_t hint;
 				memcpy(&hint, aData.data() + importLookup, sizeof(hint));
 				printf("\t\t[%04x]:%s\n", hint, aData.data() + importLookup + sizeof(hint));
+
+				Symbol s;
+				s.myAddress = importLookup;
+				s.myName = importLookup + sizeof(hint);
+				s.mySource = dll;
+				s.myType = "function";
+				out.push_back(s);
 			}
 		}
 	}
+	return out;
 }
 
 void

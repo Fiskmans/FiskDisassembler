@@ -154,15 +154,24 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="CodeCommon.cpp" />
     <ClCompile Include="CodeExplorer.cpp" />
     <ClCompile Include="ConsoleHelp.cpp" />
     <ClCompile Include="ExeExplorer.cpp" />
+    <ClCompile Include="ModRMExtended.cpp" />
+    <ClCompile Include="PrimaryOpCodeTable.cpp" />
     <ClCompile Include="Printers.cpp" />
+    <ClCompile Include="SecondaryOpCodeTable.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="CodeCommon.h" />
     <ClInclude Include="CodeExplorer.h" />
     <ClInclude Include="ConsoleHelp.h" />
+    <ClInclude Include="ModRMExtended.h" />
+    <ClInclude Include="PrimaryOpCodeTable.h" />
     <ClInclude Include="Printers.h" />
+    <ClInclude Include="SecondaryOpCodeTable.h" />
+    <ClInclude Include="Symbol.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

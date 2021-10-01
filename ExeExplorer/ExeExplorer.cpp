@@ -136,12 +136,12 @@ main()
 	PrintSections(sectionHeaders);
 
 	std::vector<unsigned char> image = AssembleImage(imageSize, imageBase, fileContent, sectionHeaders);
+	
 
-
-	DumpImportedSymbols(image, dataDirectories);
+	std::vector<Symbol> symbols = DumpImportedSymbols(image, dataDirectories);
 	//DumpDebugTable(image, dataDirectories, sectionHeaders);
 
-	ExploreCode(image, imageBase, entryPointAddress, sectionHeaders);
+	ExploreCode(image, imageBase, entryPointAddress, sectionHeaders, symbols);
 
 	system("pause");
 }

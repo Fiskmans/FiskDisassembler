@@ -5,6 +5,7 @@
 void	ResetColor();
 void	SetColorRed();
 void	SetColorGreen();
+void	SetColorPurple();
 void	SetColorBlue();
 void	SetColorLightBlue();
 
@@ -19,6 +20,12 @@ void	SetColumn(size_t aColumn);
 #define PRINTF_GREEN(...)    \
 	{                        \
 		SetColorGreen();     \
+		printf(__VA_ARGS__); \
+		ResetColor();        \
+	}
+#define PRINTF_PURPLE(...)   \
+	{                        \
+		SetColorPurple();    \
 		printf(__VA_ARGS__); \
 		ResetColor();        \
 	}
