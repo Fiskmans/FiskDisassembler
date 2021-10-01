@@ -10,58 +10,9 @@
 
 #include "CodeCommon.h"
 
-#include "PrimaryOpCodeTable.h"
 #include "ModRMExtended.h"
+#include "PrimaryOpCodeTable.h"
 #include "SecondaryOpCodeTable.h"
-
-
-size_t
-JCC(
-	const std::vector<unsigned char>&			aImage,
-	size_t										aExecutionPointer,
-	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
-	REXState									aREX,
-	size_t										aInstructionBase)
-{
-
-	switch (aImage[aExecutionPointer])
-	{
-	case 0x74: {
-		printf("JZ  ");
-		int8_t	offset;
-		memcpy(&offset, aImage.data() + aExecutionPointer + 1, sizeof(offset));
-		size_t	dest = aExecutionPointer + 1 + sizeof(offset) + offset;
-		AddBranch(dest);
-
-		PrintSignedHex(offset);
-		SetColumn(globals::globalLocationColumn);
-		printf("0x%08zx  ", dest);
-		PrintLocation(dest);
-
-		return aExecutionPointer + 2;
-	}
-	case 0x75: {
-		printf("JZ  ");
-		int8_t	offset;
-		memcpy(&offset, aImage.data() + aExecutionPointer + 1, sizeof(offset));
-		size_t	dest = aExecutionPointer + 1 + sizeof(offset) + offset;
-		AddBranch(dest);
-
-		PrintSignedHex(offset);
-		SetColumn(globals::globalLocationColumn);
-		printf("0x%08zx  ", dest);
-		PrintLocation(dest);
-
-		return aExecutionPointer + 2;
-	}
-	}
-
-	printf("unkown jcc type");
-	PrintAround(aImage, aExecutionPointer);
-
-	return -1;
-}
-
 
 size_t
 SUB_RM(
@@ -83,7 +34,7 @@ SUB_RM(
 		if (aREX.w)
 			return Operands(OperandType::REGMEM64, OperandType::IMM32, aREX, byte, aImage, aExecutionPointer + 1);
 		return Operands(OperandType::REGMEM32, OperandType::IMM32, aREX, byte, aImage, aExecutionPointer + 1);
-			
+
 	case 0x83:
 		if (aREX.w)
 			return Operands(OperandType::REGMEM64, OperandType::IMM8, aREX, byte, aImage, aExecutionPointer + 1);
@@ -207,34 +158,6 @@ RET(
 }
 
 size_t
-MOV_RM(
-	const std::vector<unsigned char>&			aImage,
-	size_t										aExecutionPointer,
-	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
-	REXState									aREX,
-	size_t										aInstructionBase)
-{
-	printf("MOV ");
-
-	ModRMByte byte = ParseModRM(aImage[aExecutionPointer], aREX);
-
-	switch (aImage[aExecutionPointer - 1])
-	{
-	case 0xc6:
-		return Operands(OperandType::REGMEM8, OperandType::IMM8, aREX, byte, aImage, aExecutionPointer + 1);
-	case 0xc7:
-		if (aREX.w)
-			return Operands(OperandType::REGMEM64, OperandType::IMM64, aREX, byte, aImage, aExecutionPointer + 1);
-
-		return Operands(OperandType::REGMEM32, OperandType::IMM32, aREX, byte, aImage, aExecutionPointer + 1);
-	}
-
-	printf("unkown mov_rm type");
-	PrintAround(aImage, aExecutionPointer + 1);
-	return -1;
-}
-
-size_t
 MOVZX(
 	const std::vector<unsigned char>&			aImage,
 	size_t										aExecutionPointer,
@@ -292,59 +215,6 @@ MOVS(
 	return aExecutionPointer + 1;
 }
 
-size_t
-CMP(
-	const std::vector<unsigned char>&			aImage,
-	size_t										aExecutionPointer,
-	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
-	REXState									aREX,
-	size_t										aInstructionBase)
-{
-	printf("CMP ");
-
-	ModRMByte byte = ParseModRM(aImage[aExecutionPointer + 1], aREX);
-	switch (aImage[aExecutionPointer])
-	{
-	case 0x39: {
-		if (aREX.w)
-			return Operands(OperandType::REGMEM64, OperandType::REG64, aREX, byte, aImage, aExecutionPointer + 2);
-
-		return Operands(OperandType::REGMEM32, OperandType::REG32, aREX, byte, aImage, aExecutionPointer + 2);
-	}
-	break;
-	}
-
-	PRINTF_RED("unmapped cmp opcode %02x", aImage[aExecutionPointer]);
-	PrintAround(aImage, aExecutionPointer + 1);
-	return -1;
-}
-
-size_t
-CMP_RM(
-	const std::vector<unsigned char>&			aImage,
-	size_t										aExecutionPointer,
-	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
-	REXState									aREX,
-	size_t										aInstructionBase)
-{
-	printf("CMP ");
-
-	ModRMByte byte = ParseModRM(aImage[aExecutionPointer], aREX);
-	switch (aImage[aExecutionPointer - 1])
-	{
-	case 0x83: {
-		if (aREX.w)
-			return Operands(OperandType::REGMEM64, OperandType::IMM8, aREX, byte, aImage, aExecutionPointer + 1);
-
-		return Operands(OperandType::REGMEM32, OperandType::IMM8, aREX, byte, aImage, aExecutionPointer + 1);
-	}
-	break;
-	}
-
-	PRINTF_RED("unmapped cmp_rm opcode %02x", aImage[aExecutionPointer]);
-	PrintAround(aImage, aExecutionPointer + 1);
-	return -1;
-}
 
 size_t
 TEST(
@@ -401,42 +271,6 @@ NOT_RM(
 	printf("NOT ");
 	ModRMByte byte = ParseModRM(aImage[aExecutionPointer], aREX);
 	return Operands(OperandType::REGMEM64, OperandType::NONE, aREX, byte, aImage, aExecutionPointer + 1);
-}
-size_t
-XOR(
-	const std::vector<unsigned char>&			aImage,
-	size_t										aExecutionPointer,
-	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
-	REXState									aREX,
-	size_t										aInstructionBase)
-{
-	printf("XOR ");
-	ModRMByte byte = ParseModRM(aImage[aExecutionPointer + 1], aREX);
-	switch (aImage[aExecutionPointer])
-	{
-	case 0x30:
-		return Operands(OperandType::REGMEM8, OperandType::REG8, aREX, byte, aImage, aExecutionPointer + 2);
-
-	case 0x31:
-		if (aREX.w)
-			return Operands(OperandType::REGMEM64, OperandType::REG64, aREX, byte, aImage, aExecutionPointer + 2);
-
-		return Operands(OperandType::REGMEM32, OperandType::REG32, aREX, byte, aImage, aExecutionPointer + 2);
-	case 0x32:
-		return Operands(OperandType::REG8, OperandType::REGMEM8, aREX, byte, aImage, aExecutionPointer + 2);
-
-	case 0x33:
-		if (aREX.w)
-			return Operands(OperandType::REG64, OperandType::REGMEM64, aREX, byte, aImage, aExecutionPointer + 2);
-
-		return Operands(OperandType::REG32, OperandType::REGMEM32, aREX, byte, aImage, aExecutionPointer + 2);
-	default:
-		break;
-	}
-
-	PRINTF_RED("unkown xor");
-	PrintAround(aImage, aInstructionBase);
-	return -1;
 }
 
 size_t
@@ -562,6 +396,16 @@ LegacyPrefix(
 		return -1;
 	}
 
+	switch (aImage[aExecutionPointer])
+	{
+	case 0xf3:
+		printf("REP ");
+		break;
+	case 0xf2:
+		printf("REPNZ ");
+		break;
+	}
+
 	std::map<unsigned char, Instruction>::const_iterator it = aOpcodeTable.find(nextInstruction);
 
 	if (it != aOpcodeTable.cend())
@@ -624,10 +468,13 @@ SecondaryOPCodeTable(
 {
 	std::map<unsigned char, Instruction> secondaryOpcodeTable;
 
-	secondaryOpcodeTable[0xb6]		= MOVZX;
-	secondaryOpcodeTable[0xb7]		= MOVZX;
 	secondaryOpcodeTable[0xb0]		= CMPXCHG;
 	secondaryOpcodeTable[0xb1]		= CMPXCHG;
+
+	secondaryOpcodeTable[0xb6]		= MOVZX;
+	secondaryOpcodeTable[0xb7]		= MOVZX;
+
+	secondaryOpcodeTable[0xa2]		= CPUID;
 
 	unsigned char nextInstruction	= aImage[aExecutionPointer + 1];
 
@@ -655,7 +502,6 @@ ExploreCode(
 
 	std::map<unsigned char, Instruction> legacyOpCodeTable;
 
-	legacyOpCodeTable[0x0f] = SecondaryOPCodeTable;
 
 	for (unsigned char	i   = 0x00; i <= 0x05; i++)
 		legacyOpCodeTable[i] = ADD;
@@ -663,27 +509,47 @@ ExploreCode(
 	for (unsigned char	i   = 0x08; i <= 0x0D; i++)
 		legacyOpCodeTable[i] = OR;
 
+	legacyOpCodeTable[0x0f] = SecondaryOPCodeTable;
+
+	for (unsigned char	i   = 0x20; i <= 0x25; i++)
+		legacyOpCodeTable[i] = AND;
+
+	legacyOpCodeTable[0x26] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::ref(legacyOpCodeTable));
+
+	for (unsigned char	i   = 0x28; i <= 0x2d; i++)
+		legacyOpCodeTable[i] = SUB;
+
+	legacyOpCodeTable[0x2e] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::ref(legacyOpCodeTable));
+
 	for (unsigned char	i   = 0x30; i <= 0x35; i++)
 		legacyOpCodeTable[i] = XOR;
 
+	legacyOpCodeTable[0x36] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::ref(legacyOpCodeTable));
+	
 	for (unsigned char	i   = 0x38; i <= 0x3d; i++)
 		legacyOpCodeTable[i] = CMP;
+
+	legacyOpCodeTable[0x3e] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::ref(legacyOpCodeTable));
 
 	for (unsigned char	i   = 0x40; i <= 0x4F; i++)
 		legacyOpCodeTable[i] = std::bind(REXPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::ref(legacyOpCodeTable));
 
 	for (unsigned char	i   = 0x50; i <= 0x57; i++)
 		legacyOpCodeTable[i] = PUSH;
+
+	for (unsigned char	i   = 0x58; i <= 0x5F; i++)
+		legacyOpCodeTable[i] = POP;
+
 	
-	legacyOpCodeTable[0x2e] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::ref(legacyOpCodeTable));
-	legacyOpCodeTable[0x3e] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::ref(legacyOpCodeTable));
-	legacyOpCodeTable[0x26] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::ref(legacyOpCodeTable));
+	legacyOpCodeTable[0x63] = MOVSXD;
 	legacyOpCodeTable[0x64] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::ref(legacyOpCodeTable));
 	legacyOpCodeTable[0x65] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::ref(legacyOpCodeTable));
-	legacyOpCodeTable[0x36] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::ref(legacyOpCodeTable));
 
-	legacyOpCodeTable[0x74] = JCC;
-	legacyOpCodeTable[0x75] = JCC;
+	legacyOpCodeTable[0x69] = IMUL;
+	legacyOpCodeTable[0x6b] = IMUL;
+
+	for (unsigned char	i   = 0x70; i <= 0x7f; i++)
+		legacyOpCodeTable[i] = JCC;
 
 	legacyOpCodeTable[0x80] = ModRMExtension;
 	legacyOpCodeTable[0x81] = ModRMExtension;
@@ -700,6 +566,9 @@ ExploreCode(
 	legacyOpCodeTable[0xa4] = MOVS;
 	legacyOpCodeTable[0xa5] = MOVS;
 
+	legacyOpCodeTable[0xAA] = STOS;
+	legacyOpCodeTable[0xAB] = STOS;
+
 	for (unsigned char	i   = 0xb0; i <= 0xbF; i++)
 		legacyOpCodeTable[i] = MOV;
 
@@ -710,13 +579,15 @@ ExploreCode(
 	legacyOpCodeTable[0xc7] = ModRMExtension;
 	legacyOpCodeTable[0xCD] = INT_Instruction;
 
+	legacyOpCodeTable[0xf2] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::ref(legacyOpCodeTable));
+	legacyOpCodeTable[0xf3] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::ref(legacyOpCodeTable));
+
 	legacyOpCodeTable[0xF6] = ModRMExtension;
 	legacyOpCodeTable[0xF7] = ModRMExtension;
 
 	legacyOpCodeTable[0xE8] = CALL_near_32_im;
 	legacyOpCodeTable[0xE9] = JMPNear;
 	legacyOpCodeTable[0xEB] = JMPNear;
-
 
 	legacyOpCodeTable[0xF0] = CLC;
 	legacyOpCodeTable[0xFF] = ModRMExtension;

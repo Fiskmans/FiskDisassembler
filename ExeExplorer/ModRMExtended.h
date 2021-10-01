@@ -8,3 +8,19 @@ JMP_RM(
 	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
 	REXState									aREX,
 	size_t										aInstructionBase);
+
+size_t
+MOV_RM(
+	const std::vector<unsigned char>&			aImage,
+	size_t										aExecutionPointer,
+	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
+	REXState									aREX,
+	size_t										aInstructionBase);
+
+size_t
+CMP_RM(
+	const std::vector<unsigned char>&			aImage,
+	size_t										aExecutionPointer,
+	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
+	REXState									aREX,
+	size_t										aInstructionBase);
