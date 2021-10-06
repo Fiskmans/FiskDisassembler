@@ -157,6 +157,7 @@
     <ClCompile Include="CodeCommon.cpp" />
     <ClCompile Include="CodeExplorer.cpp" />
     <ClCompile Include="ConsoleHelp.cpp" />
+    <ClCompile Include="CPUID_Conditionals.cpp" />
     <ClCompile Include="ExeExplorer.cpp" />
     <ClCompile Include="ModRMExtended.cpp" />
     <ClCompile Include="PrimaryOpCodeTable.cpp" />
@@ -167,6 +168,7 @@
     <ClInclude Include="CodeCommon.h" />
     <ClInclude Include="CodeExplorer.h" />
     <ClInclude Include="ConsoleHelp.h" />
+    <ClInclude Include="CPUID_Conditionals.h" />
     <ClInclude Include="ModRMExtended.h" />
     <ClInclude Include="PrimaryOpCodeTable.h" />
     <ClInclude Include="Printers.h" />

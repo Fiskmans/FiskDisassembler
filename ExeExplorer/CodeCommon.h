@@ -130,7 +130,7 @@ struct REXState
 	bool	b : 1;
 };
 
-typedef std::function<	size_t(const std::vector<unsigned char>&, size_t, const std::vector<IMAGE_SECTION_HEADER>&, REXState, size_t)> Instruction;
+typedef std::function<	size_t(const std::vector<unsigned char>&, size_t, const std::vector<IMAGE_SECTION_HEADER>&, REXState, bool, size_t)> Instruction;
 
 ModRMByte
 						ParseModRM(

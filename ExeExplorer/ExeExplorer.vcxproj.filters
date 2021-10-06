@@ -39,6 +39,9 @@
     <ClCompile Include="CodeCommon.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="CPUID_Conditionals.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ConsoleHelp.h">
@@ -63,6 +66,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="CodeCommon.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="CPUID_Conditionals.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

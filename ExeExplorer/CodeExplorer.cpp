@@ -13,346 +13,85 @@
 #include "ModRMExtended.h"
 #include "PrimaryOpCodeTable.h"
 #include "SecondaryOpCodeTable.h"
-
-size_t
-SUB_RM(
-	const std::vector<unsigned char>&			aImage,
-	size_t										aExecutionPointer,
-	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
-	REXState									aREX,
-	size_t										aInstructionBase)
-{
-	ModRMByte byte = ParseModRM(aImage[aExecutionPointer], aREX);
-
-	printf("SUB ");
-	switch (aImage[aExecutionPointer - 1])
-	{
-	case 0x80:
-		return Operands(OperandType::REGMEM8, OperandType::IMM8, aREX, byte, aImage, aExecutionPointer + 1);
-
-	case 0x81:
-		if (aREX.w)
-			return Operands(OperandType::REGMEM64, OperandType::IMM32, aREX, byte, aImage, aExecutionPointer + 1);
-		return Operands(OperandType::REGMEM32, OperandType::IMM32, aREX, byte, aImage, aExecutionPointer + 1);
-
-	case 0x83:
-		if (aREX.w)
-			return Operands(OperandType::REGMEM64, OperandType::IMM8, aREX, byte, aImage, aExecutionPointer + 1);
-		return Operands(OperandType::REGMEM32, OperandType::IMM8, aREX, byte, aImage, aExecutionPointer + 1);
-	}
-	return -1;
-}
-
-size_t
-ADD_RM(
-	const std::vector<unsigned char>&			aImage,
-	size_t										aExecutionPointer,
-	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
-	REXState									aREX,
-	size_t										aInstructionBase)
-{
-	ModRMByte	byte	  = ParseModRM(aImage[aExecutionPointer], aREX);
-	uint32_t	extra	 = 0;
-	printf("ADD ");
-	switch (aImage[aExecutionPointer - 1])
-	{
-	case 0x80:
-		return Operands(OperandType::REGMEM8, OperandType::IMM8, aREX, byte, aImage, aExecutionPointer + 1);
-	case 0x81:
-		if (aREX.w)
-			return Operands(OperandType::REGMEM64, OperandType::IMM32, aREX, byte, aImage, aExecutionPointer + 1);
-		return Operands(OperandType::REGMEM32, OperandType::IMM32, aREX, byte, aImage, aExecutionPointer + 1);
-	case 0x83:
-		if (aREX.w)
-			return Operands(OperandType::REGMEM64, OperandType::IMM8, aREX, byte, aImage, aExecutionPointer + 1);
-		return Operands(OperandType::REGMEM32, OperandType::IMM8, aREX, byte, aImage, aExecutionPointer + 1);
-	}
-
-	PRINTF_RED("Unkown add_rm");
-	return -1;
-}
-
-size_t
-CALL_near_32_im(
-	const std::vector<unsigned char>&			aImage,
-	size_t										aExecutionPointer,
-	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
-	REXState									aREX,
-	size_t										aInstructionBase)
-{
-	printf("CALL ");
-	int32_t offset;
-	memcpy(&offset, aImage.data() + aExecutionPointer + 1, sizeof(offset));
-
-	size_t		nextInstruction = aExecutionPointer + 1 + sizeof(offset);
-	size_t		target		   = nextInstruction + offset;
-	std::string name			= GetOrGenerateFunctionName(target);
-
-	AddFunction(target);
-
-	PrintSignedHex(offset);
-	SetColumn(globals::globalLocationColumn);
-	printf("0x%08zx  ", target);
-	PrintFunction(target);
-
-	return nextInstruction;
-}
-
-size_t
-CALL_RM(
-	const std::vector<unsigned char>&			aImage,
-	size_t										aExecutionPointer,
-	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
-	REXState									aREX,
-	size_t										aInstructionBase)
-{
-	printf("CALL ");
-	ModRMByte	byte	  = ParseModRM(aImage[aExecutionPointer], aREX);
-	size_t		out	   = -1;
-
-	switch (byte.reg)
-	{
-	case 0x2: {
-
-		size_t loc = 0;
-		if (aREX.w)
-			out = Operands(OperandType::REGMEM64, OperandType::NONE, aREX, byte, aImage, aExecutionPointer + 1, false, &loc);
-		else
-			out = Operands(OperandType::REGMEM32, OperandType::NONE, aREX, byte, aImage, aExecutionPointer + 1, false, &loc);
-
-		if (loc != 0)
-		{
-			AddFunction(loc, "_memaddr");
-			printf("\t");
-			PrintFunction(loc);
-		}
-		else
-		{
-			PrintFunction(GenerateName("function_", "_regaddr"));
-		}
-	}
-	break;
-	default:
-		break;
-	}
-
-	return out;
-}
-
-size_t
-RET(
-	const std::vector<unsigned char>&			aImage,
-	size_t										aExecutionPointer,
-	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
-	REXState									aREX,
-	size_t										aInstructionBase)
-{
-	printf("RET");
-	if (aImage[aExecutionPointer] == 0xC2)
-	{
-		uint16_t toPop;
-		memcpy(&toPop, aImage.data() + aExecutionPointer + 1, sizeof(toPop));
-		printf(" POP(%04x)", toPop);
-	}
-	return -1;
-}
-
-size_t
-MOVZX(
-	const std::vector<unsigned char>&			aImage,
-	size_t										aExecutionPointer,
-	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
-	REXState									aREX,
-	size_t										aInstructionBase)
-{
-	printf("MOVZX ");
-
-	ModRMByte byte = ParseModRM(aImage[aExecutionPointer + 1], aREX);
-
-	switch (aImage[aExecutionPointer])
-	{
-	case 0xB6: {
-		if (aREX.w)
-			return Operands(OperandType::REG64, OperandType::REGMEM8, aREX, byte, aImage, aExecutionPointer + 2);
-
-		return Operands(OperandType::REG32, OperandType::REGMEM8, aREX, byte, aImage, aExecutionPointer + 2);
-	}
-	case 0xB7: {
-		if (aREX.w)
-			return Operands(OperandType::REG64, OperandType::REGMEM16, aREX, byte, aImage, aExecutionPointer + 2);
-
-		return Operands(OperandType::REG32, OperandType::REGMEM16, aREX, byte, aImage, aExecutionPointer + 2);
-	}
-	}
-
-	printf("unkown movzx type %02x", aImage[aExecutionPointer]);
-	PrintAround(aImage, aExecutionPointer);
-	return -1;
-}
-
-size_t
-MOVS(
-	const std::vector<unsigned char>&			aImage,
-	size_t										aExecutionPointer,
-	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
-	REXState									aREX,
-	size_t										aInstructionBase)
-{
-
-	switch (aImage[aExecutionPointer])
-	{
-	case 0xa4:
-		printf("MOVS [rSI], [rDI]");
-		break;
-	case 0xa5:
-		if (aREX.w)
-			printf("MOVS [rSI], [rDI]");
-		else
-			printf("MOVS [rSI], [rDI]");
-
-		break;
-	}
-	return aExecutionPointer + 1;
-}
-
-
-size_t
-TEST(
-	const std::vector<unsigned char>&			aImage,
-	size_t										aExecutionPointer,
-	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
-	REXState									aREX,
-	size_t										aInstructionBase)
-{
-	printf("TEST ");
-
-	switch (aImage[aExecutionPointer])
-	{
-	case 0x85: {
-		ModRMByte	byte	  = ParseModRM(aImage[aExecutionPointer + 1], aREX);
-		uint32_t	extra1	 = 0;
-		uint32_t	extra2	 = 0;
-
-		int32_t		offset	= 0;
-
-		printf("%s", RegMem(byte, aREX, RegisterSize::REGISTER_64BIT, false, aImage, aExecutionPointer + 2, extra1, &offset).c_str());
-		printf(", %s", RegMem(byte, aREX, RegisterSize::REGISTER_64BIT, true, aImage, aExecutionPointer + 2, extra2).c_str());
-
-		if (offset != 0)
-		{
-			size_t loc = aExecutionPointer + 2 + extra1 + offset;
-			printf("\t0x%08zx", loc);
-			if (aREX.w)
-			{
-				uint64_t toCmp;
-				memcpy(&toCmp, aImage.data() + loc, sizeof(toCmp));
-				printf(": %016I64x", toCmp);
-			}
-		}
-
-		return aExecutionPointer + 2 + extra1;
-	}
-	break;
-	}
-
-	printf("unmapped test opcode %02x", aImage[aExecutionPointer]);
-	PrintAround(aImage, aExecutionPointer + 1);
-	return -1;
-}
-
-size_t
-NOT_RM(
-	const std::vector<unsigned char>&			aImage,
-	size_t										aExecutionPointer,
-	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
-	REXState									aREX,
-	size_t										aInstructionBase)
-{
-	printf("NOT ");
-	ModRMByte byte = ParseModRM(aImage[aExecutionPointer], aREX);
-	return Operands(OperandType::REGMEM64, OperandType::NONE, aREX, byte, aImage, aExecutionPointer + 1);
-}
-
-size_t
-LEA(
-	const std::vector<unsigned char>&			aImage,
-	size_t										aExecutionPointer,
-	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
-	REXState									aREX,
-	size_t										aInstructionBase)
-{
-	printf("LEA ");
-
-	ModRMByte byte = ParseModRM(aImage[aExecutionPointer + 1], aREX);
-
-	if (aREX.w)
-		return Operands(OperandType::REG64, OperandType::REGMEM64, aREX, byte, aImage, aExecutionPointer + 2, true);
-
-	return Operands(OperandType::REG32, OperandType::REGMEM32, aREX, byte, aImage, aExecutionPointer + 2, true);
-}
-size_t
-CLC(
-	const std::vector<unsigned char>&			aImage,
-	size_t										aExecutionPointer,
-	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
-	REXState									aREX,
-	size_t										aInstructionBase)
-{
-	printf("CLC");
-	return aExecutionPointer + 1;
-}
-
-size_t
-CMPXCHG(
-	const std::vector<unsigned char>&			aImage,
-	size_t										aExecutionPointer,
-	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
-	REXState									aREX,
-	size_t										aInstructionBase)
-{
-	printf("CMPXCHG ");
-
-	ModRMByte byte = ParseModRM(aImage[aExecutionPointer + 1], aREX);
-
-	switch (aImage[aExecutionPointer])
-	{
-	case 0xb0:
-		return Operands(OperandType::REGMEM8, OperandType::REG8, aREX, byte, aImage, aExecutionPointer + 2);
-	case 0xb1:
-		if (aREX.w)
-			return Operands(OperandType::REGMEM64, OperandType::REG64, aREX, byte, aImage, aExecutionPointer + 2);
-		return Operands(OperandType::REGMEM32, OperandType::REG32, aREX, byte, aImage, aExecutionPointer + 2);
-	}
-
-	PRINTF_RED("unkown cmpxchg");
-	return -1;
-}
-
 size_t
 ModRMExtension(
 	const std::vector<unsigned char>&			aImage,
 	size_t										aExecutionPointer,
 	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
 	REXState									aREX,
-	size_t										aInstructionBase)
+	bool										aIs16Bit,
+	size_t										aInstructionBase,
+	size_t										aImageBase)
 {
 	std::map<unsigned char, std::map<unsigned char, Instruction>> ModRMExtesionTable;
 
+	ModRMExtesionTable[0xc0][0x0]	= ROL_RM;
+	ModRMExtesionTable[0xc0][0x1]	= ROR_RM;
+	ModRMExtesionTable[0xc0][0x4]	= SAL_RM;
+	ModRMExtesionTable[0xc0][0x5]	= SHR_RM;
+
+	ModRMExtesionTable[0xc1][0x0]	= ROL_RM;
+	ModRMExtesionTable[0xc1][0x1]	= ROR_RM;
+	ModRMExtesionTable[0xc1][0x4]	= SAL_RM;
+	ModRMExtesionTable[0xc1][0x5]	= SHR_RM;
+
+	ModRMExtesionTable[0xd0][0x0]	= ROL_RM;
+	ModRMExtesionTable[0xd0][0x1]	= ROR_RM;
+	ModRMExtesionTable[0xd0][0x4]	= SAL_RM;
+	ModRMExtesionTable[0xd0][0x5]	= SHR_RM;
+
+	ModRMExtesionTable[0xd1][0x0]	= ROL_RM;
+	ModRMExtesionTable[0xd1][0x1]	= ROR_RM;
+	ModRMExtesionTable[0xd1][0x4]	= SAL_RM;
+	ModRMExtesionTable[0xd1][0x5]	= SHR_RM;
+
+	ModRMExtesionTable[0xd2][0x0]	= ROL_RM;
+	ModRMExtesionTable[0xd2][0x1]	= ROR_RM;
+	ModRMExtesionTable[0xd2][0x4]	= SAL_RM;
+	ModRMExtesionTable[0xd2][0x5]	= SHR_RM;
+
+	ModRMExtesionTable[0xd3][0x0]	= ROL_RM;
+	ModRMExtesionTable[0xd3][0x1]	= ROR_RM;
+	ModRMExtesionTable[0xd3][0x4]	= SAL_RM;
+	ModRMExtesionTable[0xd3][0x5]	= SHR_RM;
+
+	ModRMExtesionTable[0x80][0x0]	= ADD_RM;
+	ModRMExtesionTable[0x80][0x1]	= OR_RM;
+	ModRMExtesionTable[0x80][0x4]	= AND_RM;
+	ModRMExtesionTable[0x80][0x5]	= SUB_RM;
+	ModRMExtesionTable[0x80][0x6]	= XOR_RM;
+	ModRMExtesionTable[0x80][0x7]	= CMP_RM;
+
 	ModRMExtesionTable[0x81][0x0]	= ADD_RM;
+	ModRMExtesionTable[0x81][0x1]	= OR_RM;
+	ModRMExtesionTable[0x81][0x4]	= AND_RM;
 	ModRMExtesionTable[0x81][0x5]	= SUB_RM;
+	ModRMExtesionTable[0x81][0x6]	= XOR_RM;
 	ModRMExtesionTable[0x81][0x7]	= CMP_RM;
 
 	ModRMExtesionTable[0x83][0x0]	= ADD_RM;
+	ModRMExtesionTable[0x83][0x1]	= OR_RM;
+	ModRMExtesionTable[0x83][0x4]	= AND_RM;
 	ModRMExtesionTable[0x83][0x5]	= SUB_RM;
+	ModRMExtesionTable[0x83][0x6]	= XOR_RM;
 	ModRMExtesionTable[0x83][0x7]	= CMP_RM;
 
 	ModRMExtesionTable[0xc7][0x0]	= MOV_RM;
 	ModRMExtesionTable[0xc6][0x0]	= MOV_RM;
 
+	ModRMExtesionTable[0xf6][0x0]	= TEST_RM;
+	ModRMExtesionTable[0xf6][0x2]	= NOT_RM;
+
+	ModRMExtesionTable[0xf7][0x0]	= TEST_RM;
 	ModRMExtesionTable[0xf7][0x2]	= NOT_RM;
 
-	ModRMExtesionTable[0xff][0x2]	= CALL_RM;
-	ModRMExtesionTable[0xff][0x3]	= CALL_RM;
+	ModRMExtesionTable[0xfe][0x0]	= INC_RM;
+	ModRMExtesionTable[0xfe][0x1]	= DEC_RM;
+
+	ModRMExtesionTable[0xff][0x0]	= INC_RM;
+	ModRMExtesionTable[0xff][0x1]	= DEC_RM;
+	ModRMExtesionTable[0xff][0x2]	= std::bind(CALL_RM, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, aImageBase);
+	ModRMExtesionTable[0xff][0x3]	= std::bind(CALL_RM, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, aImageBase);
 	ModRMExtesionTable[0xff][0x4]	= JMP_RM;
 	ModRMExtesionTable[0xff][0x5]	= JMP_RM;
 
@@ -362,7 +101,43 @@ ModRMExtension(
 
 		if (ModRMExtesionTable[aImage[aExecutionPointer]].count(byte.reg) != 0)
 		{
-			return ModRMExtesionTable[aImage[aExecutionPointer]][byte.reg](aImage, aExecutionPointer + 1, aSections, aREX, aInstructionBase);
+			return ModRMExtesionTable[aImage[aExecutionPointer]][byte.reg](aImage, aExecutionPointer + 1, aSections, aREX, aIs16Bit, aInstructionBase);
+		}
+		else
+		{
+			PRINTF_RED("Unkown ModRM extension instruction: %01x\n", byte.reg);
+			PrintAround(aImage, aExecutionPointer);
+			return -1;
+		}
+	}
+	else
+	{
+		PRINTF_RED("Unkown ModRM extension group\n");
+		PrintAround(aImage, aExecutionPointer);
+		return -1;
+	}
+}
+
+size_t
+SecondaryModRMExtension(
+	const std::vector<unsigned char>&			aImage,
+	size_t										aExecutionPointer,
+	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
+	REXState									aREX,
+	bool										aIs16Bit,
+	size_t										aInstructionBase)
+{
+	std::map<unsigned char, std::map<unsigned char, Instruction>> ModRMExtesionTable;
+
+	ModRMExtesionTable[0x01][0x02] = XGETSETBV_sec_rm;
+
+	if (ModRMExtesionTable.count(aImage[aExecutionPointer]) != 0)
+	{
+		ModRMByte byte = ParseModRM(aImage[aExecutionPointer + 1], aREX);
+
+		if (ModRMExtesionTable[aImage[aExecutionPointer]].count(byte.reg) != 0)
+		{
+			return ModRMExtesionTable[aImage[aExecutionPointer]][byte.reg](aImage, aExecutionPointer + 1, aSections, aREX, aIs16Bit, aInstructionBase);
 		}
 		else
 		{
@@ -385,6 +160,7 @@ LegacyPrefix(
 	size_t										aExecutionPointer,
 	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
 	REXState									aREX,
+	bool										aIs16Bit,
 	size_t										aInstructionBase,
 	const std::map<unsigned char, Instruction>& aOpcodeTable)
 {
@@ -410,7 +186,33 @@ LegacyPrefix(
 
 	if (it != aOpcodeTable.cend())
 	{
-		return (it->second)(aImage, aExecutionPointer + 1, aSections, aREX, aInstructionBase);
+		return (it->second)(aImage, aExecutionPointer + 1, aSections, aREX, aIs16Bit, aInstructionBase);
+	}
+	else
+	{
+		PRINTF_RED("Unkown instruction: %02x\n", nextInstruction);
+		PrintAround(aImage, aExecutionPointer + 1, aSections);
+		return -1;
+	}
+}
+
+size_t
+WordSizePrefix(
+	const std::vector<unsigned char>&			aImage,
+	size_t										aExecutionPointer,
+	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
+	REXState									aREX,
+	bool										aIs16Bit,
+	size_t										aInstructionBase,
+	const std::map<unsigned char, Instruction>& aOpcodeTable)
+{
+	unsigned char nextInstruction = aImage[aExecutionPointer + 1];
+
+	std::map<unsigned char, Instruction>::const_iterator it = aOpcodeTable.find(nextInstruction);
+
+	if (it != aOpcodeTable.cend())
+	{
+		return (it->second)(aImage, aExecutionPointer + 1, aSections, aREX, true, aInstructionBase);
 	}
 	else
 	{
@@ -426,6 +228,7 @@ REXPrefix(
 	size_t										aExecutionPointer,
 	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
 	REXState									aREX,
+	bool										aIs16Bit,
 	size_t										aInstructionBase,
 	const std::map<unsigned char, Instruction>& aOpcodeTable)
 {
@@ -448,7 +251,7 @@ REXPrefix(
 		rex.x	= !!(aImage[aExecutionPointer] & 0b00000010);
 		rex.b	= !!(aImage[aExecutionPointer] & 0b00000001);
 
-		return (it->second)(aImage, aExecutionPointer + 1, aSections, rex, aInstructionBase);
+		return (it->second)(aImage, aExecutionPointer + 1, aSections, rex, aIs16Bit, aInstructionBase);
 	}
 	else
 	{
@@ -464,23 +267,32 @@ SecondaryOPCodeTable(
 	size_t										aExecutionPointer,
 	const std::vector<IMAGE_SECTION_HEADER>&	aSections,
 	REXState									aREX,
+	bool										aIs16Bit,
 	size_t										aInstructionBase)
 {
 	std::map<unsigned char, Instruction> secondaryOpcodeTable;
 
-	secondaryOpcodeTable[0xb0]		= CMPXCHG;
-	secondaryOpcodeTable[0xb1]		= CMPXCHG;
+	secondaryOpcodeTable[0x01] = SecondaryModRMExtension;
 
-	secondaryOpcodeTable[0xb6]		= MOVZX;
-	secondaryOpcodeTable[0xb7]		= MOVZX;
+	for (unsigned char	i   = 0x19; i <= 0x9f; i++)
+		secondaryOpcodeTable[i] = NOP_sec;
 
-	secondaryOpcodeTable[0xa2]		= CPUID;
+	secondaryOpcodeTable[0xb0]	= CMPXCHG;
+	secondaryOpcodeTable[0xb1]	= CMPXCHG;
+
+	secondaryOpcodeTable[0xb6]	= MOVZX;
+	secondaryOpcodeTable[0xb7]	= MOVZX;
+
+	for (unsigned char	i   = 0x80; i <= 0x8f; i++)
+		secondaryOpcodeTable[i] = JCC_sec;
+
+	secondaryOpcodeTable[0xa2]		= CPUID_sec;
 
 	unsigned char nextInstruction	= aImage[aExecutionPointer + 1];
 
 	if (secondaryOpcodeTable.count(nextInstruction) != 0)
 	{
-		return secondaryOpcodeTable[nextInstruction](aImage, aExecutionPointer + 1, aSections, aREX, aInstructionBase);
+		return secondaryOpcodeTable[nextInstruction](aImage, aExecutionPointer + 1, aSections, aREX, aIs16Bit, aInstructionBase);
 	}
 	else
 	{
@@ -500,8 +312,13 @@ ExploreCode(
 {
 	globals::globalImageBase = aImageBase;
 
-	std::map<unsigned char, Instruction> legacyOpCodeTable;
+	std::vector<std::pair<Symbol, bool>> symbols;
+	for (const Symbol&	symbol : aSymbols)
+	{
+		symbols.push_back(std::make_pair(symbol, false));
+	}
 
+	std::map<unsigned char, Instruction> legacyOpCodeTable;
 
 	for (unsigned char	i   = 0x00; i <= 0x05; i++)
 		legacyOpCodeTable[i] = ADD;
@@ -509,30 +326,30 @@ ExploreCode(
 	for (unsigned char	i   = 0x08; i <= 0x0D; i++)
 		legacyOpCodeTable[i] = OR;
 
-	legacyOpCodeTable[0x0f] = SecondaryOPCodeTable;
+	legacyOpCodeTable[0x0F] = SecondaryOPCodeTable;
 
 	for (unsigned char	i   = 0x20; i <= 0x25; i++)
 		legacyOpCodeTable[i] = AND;
 
-	legacyOpCodeTable[0x26] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::ref(legacyOpCodeTable));
+	legacyOpCodeTable[0x26] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, std::ref(legacyOpCodeTable));
 
-	for (unsigned char	i   = 0x28; i <= 0x2d; i++)
+	for (unsigned char	i   = 0x28; i <= 0x2D; i++)
 		legacyOpCodeTable[i] = SUB;
 
-	legacyOpCodeTable[0x2e] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::ref(legacyOpCodeTable));
+	legacyOpCodeTable[0x2E] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, std::ref(legacyOpCodeTable));
 
 	for (unsigned char	i   = 0x30; i <= 0x35; i++)
 		legacyOpCodeTable[i] = XOR;
 
-	legacyOpCodeTable[0x36] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::ref(legacyOpCodeTable));
-	
-	for (unsigned char	i   = 0x38; i <= 0x3d; i++)
+	legacyOpCodeTable[0x36] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, std::ref(legacyOpCodeTable));
+
+	for (unsigned char	i   = 0x38; i <= 0x3D; i++)
 		legacyOpCodeTable[i] = CMP;
 
-	legacyOpCodeTable[0x3e] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::ref(legacyOpCodeTable));
+	legacyOpCodeTable[0x3E] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, std::ref(legacyOpCodeTable));
 
 	for (unsigned char	i   = 0x40; i <= 0x4F; i++)
-		legacyOpCodeTable[i] = std::bind(REXPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::ref(legacyOpCodeTable));
+		legacyOpCodeTable[i] = std::bind(REXPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, std::ref(legacyOpCodeTable));
 
 	for (unsigned char	i   = 0x50; i <= 0x57; i++)
 		legacyOpCodeTable[i] = PUSH;
@@ -540,57 +357,71 @@ ExploreCode(
 	for (unsigned char	i   = 0x58; i <= 0x5F; i++)
 		legacyOpCodeTable[i] = POP;
 
-	
 	legacyOpCodeTable[0x63] = MOVSXD;
-	legacyOpCodeTable[0x64] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::ref(legacyOpCodeTable));
-	legacyOpCodeTable[0x65] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::ref(legacyOpCodeTable));
+	legacyOpCodeTable[0x64] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, std::ref(legacyOpCodeTable));
+	legacyOpCodeTable[0x65] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, std::ref(legacyOpCodeTable));
+	legacyOpCodeTable[0x66] = std::bind(WordSizePrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, std::ref(legacyOpCodeTable));
 
 	legacyOpCodeTable[0x69] = IMUL;
-	legacyOpCodeTable[0x6b] = IMUL;
+	legacyOpCodeTable[0x6B] = IMUL;
 
-	for (unsigned char	i   = 0x70; i <= 0x7f; i++)
+	for (unsigned char	i   = 0x70; i <= 0x7F; i++)
 		legacyOpCodeTable[i] = JCC;
 
-	legacyOpCodeTable[0x80] = ModRMExtension;
-	legacyOpCodeTable[0x81] = ModRMExtension;
-	legacyOpCodeTable[0x82] = ModRMExtension;
-	legacyOpCodeTable[0x83] = ModRMExtension;
+	legacyOpCodeTable[0x80] = std::bind(ModRMExtension, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, aImageBase);
+	legacyOpCodeTable[0x81] = std::bind(ModRMExtension, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, aImageBase);
+	legacyOpCodeTable[0x82] = std::bind(ModRMExtension, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, aImageBase);
+	legacyOpCodeTable[0x83] = std::bind(ModRMExtension, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, aImageBase);
 
+	legacyOpCodeTable[0x84] = TEST;
 	legacyOpCodeTable[0x85] = TEST;
+	legacyOpCodeTable[0x86] = XCHG;
+	legacyOpCodeTable[0x87] = XCHG;
 
-	for (unsigned char	i   = 0x88; i <= 0x8c; i++)
+	for (unsigned char	i   = 0x88; i <= 0x8C; i++)
 		legacyOpCodeTable[i] = MOV;
 
-	legacyOpCodeTable[0x8d] = LEA;
+	legacyOpCodeTable[0x8D] = LEA;
 
-	legacyOpCodeTable[0xa4] = MOVS;
-	legacyOpCodeTable[0xa5] = MOVS;
+	legacyOpCodeTable[0x90] = CBW;
+
+	legacyOpCodeTable[0xA4] = MOVS;
+	legacyOpCodeTable[0xA5] = MOVS;
 
 	legacyOpCodeTable[0xAA] = STOS;
 	legacyOpCodeTable[0xAB] = STOS;
 
-	for (unsigned char	i   = 0xb0; i <= 0xbF; i++)
+	for (unsigned char	i   = 0xB0; i <= 0xBF; i++)
 		legacyOpCodeTable[i] = MOV;
 
-	legacyOpCodeTable[0xc2] = RET;
-	legacyOpCodeTable[0xc3] = RET;
+	legacyOpCodeTable[0xC0] = std::bind(ModRMExtension, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, aImageBase);
+	legacyOpCodeTable[0xC1] = std::bind(ModRMExtension, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, aImageBase);
 
-	legacyOpCodeTable[0xc6] = ModRMExtension;
-	legacyOpCodeTable[0xc7] = ModRMExtension;
+	legacyOpCodeTable[0xC2] = RET;
+	legacyOpCodeTable[0xC3] = RET;
+
+	legacyOpCodeTable[0xC6] = std::bind(ModRMExtension, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, aImageBase);
+	legacyOpCodeTable[0xC7] = std::bind(ModRMExtension, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, aImageBase);
+	legacyOpCodeTable[0xCC] = INT3;
 	legacyOpCodeTable[0xCD] = INT_Instruction;
 
-	legacyOpCodeTable[0xf2] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::ref(legacyOpCodeTable));
-	legacyOpCodeTable[0xf3] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::ref(legacyOpCodeTable));
+	legacyOpCodeTable[0xD0] = std::bind(ModRMExtension, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, aImageBase);
+	legacyOpCodeTable[0xD1] = std::bind(ModRMExtension, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, aImageBase);
+	legacyOpCodeTable[0xD2] = std::bind(ModRMExtension, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, aImageBase);
+	legacyOpCodeTable[0xD3] = std::bind(ModRMExtension, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, aImageBase);
 
-	legacyOpCodeTable[0xF6] = ModRMExtension;
-	legacyOpCodeTable[0xF7] = ModRMExtension;
+	legacyOpCodeTable[0xF2] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, std::ref(legacyOpCodeTable));
+	legacyOpCodeTable[0xF3] = std::bind(LegacyPrefix, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, std::ref(legacyOpCodeTable));
 
-	legacyOpCodeTable[0xE8] = CALL_near_32_im;
-	legacyOpCodeTable[0xE9] = JMPNear;
-	legacyOpCodeTable[0xEB] = JMPNear;
+	legacyOpCodeTable[0xF6] = std::bind(ModRMExtension, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, aImageBase);
+	legacyOpCodeTable[0xF7] = std::bind(ModRMExtension, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, aImageBase);
+
+	legacyOpCodeTable[0xE8] = CALL;
+	legacyOpCodeTable[0xE9] = JMP;
+	legacyOpCodeTable[0xEB] = JMP;
 
 	legacyOpCodeTable[0xF0] = CLC;
-	legacyOpCodeTable[0xFF] = ModRMExtension;
+	legacyOpCodeTable[0xFF] = std::bind(ModRMExtension, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6, aImageBase);
 
 	REXState rex;
 	rex.w	= false;
@@ -621,7 +452,7 @@ ExploreCode(
 
 		while (executionPointer != -1)
 		{
-			for (size_t			i = 0; i < globals::globalBranches.size(); i++)
+			for (size_t i = 0; i < globals::globalBranches.size(); i++)
 			{
 				if (globals::globalBranches[i].myExpanded)
 					continue;
@@ -637,13 +468,17 @@ ExploreCode(
 			}
 
 			bool isSymbol = false;
-			for (const Symbol&	symbol : aSymbols)
+			for (std::pair<Symbol, bool>&		symbol : symbols)
 			{
-				if (symbol.myAddress == executionPointer)
+				if (symbol.second)
+					continue;
+
+				if (symbol.first.myAddress == executionPointer)
 				{
-					isSymbol = true;
-					printf("\nImported %s symbol: [%s] ", symbol.myType.c_str(), symbol.mySource.c_str());
-					PRINTF_PURPLE("%s\n\n", aImage.data() + symbol.myName);
+					isSymbol		= true;
+					symbol.second	= true;
+					printf("\nImported %s symbol: [%s] ", symbol.first.myType.c_str(), symbol.first.mySource.c_str());
+					PRINTF_PURPLE("%s\n\n", aImage.data() + symbol.first.myName);
 					break;
 				}
 			}
@@ -657,7 +492,7 @@ ExploreCode(
 				break;
 			}
 			bool found = false;
-			for (const IMAGE_SECTION_HEADER& section : aSections)
+			for (const IMAGE_SECTION_HEADER&	section : aSections)
 			{
 				if (executionPointer > section.VirtualAddress && executionPointer < section.VirtualAddress + section.Misc.VirtualSize)
 				{
@@ -677,7 +512,7 @@ ExploreCode(
 			printf("\n  0x%08zx ", executionPointer);
 			if (legacyOpCodeTable.count(aImage[executionPointer]))
 			{
-				executionPointer = legacyOpCodeTable[aImage[executionPointer]](aImage, executionPointer, aSections, rex, executionPointer);
+				executionPointer = legacyOpCodeTable[aImage[executionPointer]](aImage, executionPointer, aSections, rex, false, executionPointer);
 			}
 			else
 			{
@@ -700,4 +535,20 @@ ExploreCode(
 		}
 		printf("\n\n");
 	} while (true);
+
+	printf("\Symbols:");
+	for (auto&			symbol : symbols)
+	{
+		if (symbol.second)
+		{
+			PRINTF_GREEN("\n\tSEEN    ");
+		}
+		else
+		{
+			PRINTF_RED("\n\tUNSEEN  ");
+		}
+
+		PRINTF_PURPLE("%s", aImage.data() + symbol.first.myName);
+	}
+	printf("\n");
 }

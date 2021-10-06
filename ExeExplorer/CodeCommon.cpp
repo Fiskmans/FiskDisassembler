@@ -377,7 +377,7 @@ RegMem(
 			return out;
 		}
 		case 0b101:
-			return "[how ??" + StringSignedHex(offset) + "]";
+			return "[rBP" + StringSignedHex(offset) + "]";
 		case 0b110: {
 			return "[rSI" + StringSignedHex(offset) + "]";
 		}
@@ -455,10 +455,9 @@ RegMem(
 			return out;
 		}
 		case 0b101:
-			return "[how ??" + StringSignedHex(offset) + "]";
-		case 0b110: {
+			return "[rBP" + StringSignedHex(offset) + "]";
+		case 0b110: 
 			return "[rSI" + StringSignedHex(offset) + "]";
-		}
 		case 0b111:
 			return "[rDI" + StringSignedHex(offset) + "]";
 		case 0b1000:
